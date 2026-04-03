@@ -1,0 +1,591 @@
+<!DOCTYPE html>
+<html lang="uk">
+<head>
+    <meta charset="UTF-8">
+    <title>UDTracker - Valorant Stats</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif; }
+        body { background-color: #0f141d; color: #ece8e1; display: flex; flex-direction: column; min-height: 100vh; }
+
+        .search-bar { background-color: #1b222d; padding: 20px; text-align: center; border-bottom: 2px solid #ff4655; display: flex; justify-content: center; gap: 10px;}
+        .search-bar input { padding: 10px 15px; border: none; border-radius: 4px; background: #28313e; color: white; outline: none; font-size: 16px; }
+        .search-bar button { padding: 10px 25px; border: none; border-radius: 4px; background: #ff4655; color: white; font-weight: bold; cursor: pointer; text-transform: uppercase; transition: 0.2s;}
+        .search-bar button:hover { background: #ff5e6a; }
+
+        .main-container { max-width: 1200px; margin: 30px auto; display: flex; gap: 20px; display: none; padding: 0 20px; flex: 1; width: 100%;}
+
+        /* ЛІВА ПАНЕЛЬ */
+        .sidebar { width: 300px; background-color: #1b222d; border-radius: 8px; overflow: hidden; display: flex; flex-direction: column; height: fit-content; }
+        .player-card-bg { height: 120px; background-size: cover; background-position: center; background-color: #28313e; }
+        .player-info { padding: 20px; text-align: center; margin-top: -40px; }
+        .avatar-placeholder { width: 80px; height: 80px; background: #ff4655; border-radius: 50%; margin: 0 auto 10px; border: 4px solid #1b222d; display: flex; align-items: center; justify-content: center; font-size: 24px; font-weight: bold; color: white;}
+        .player-name { font-size: 22px; font-weight: bold; }
+        .player-tag { color: #8a96a3; font-size: 14px; margin-bottom: 15px;}
+        .rank-info { background: #28313e; padding: 15px; border-radius: 6px; margin-bottom: 10px; }
+        .rank-title { color: #8a96a3; font-size: 12px; text-transform: uppercase; margin-bottom: 5px; }
+        .rank-value { font-size: 18px; font-weight: bold; color: #00ffbc; }
+        .level-value { font-size: 16px; font-weight: bold; margin-top: 5px; }
+
+        /* ПРАВА ПАНЕЛЬ */
+        .content-area { flex: 1; display: flex; flex-direction: column; }
+
+        .tabs { display: flex; background: #1b222d; border-radius: 8px 8px 0 0; border-bottom: 1px solid #28313e; }
+        .tab-btn { padding: 15px 30px; background: none; border: none; color: #8a96a3; font-size: 16px; font-weight: bold; cursor: pointer; transition: 0.3s; border-bottom: 3px solid transparent; text-transform: uppercase; }
+        .tab-btn:hover { color: white; }
+        .tab-btn.active { color: white; border-bottom-color: #ff4655; }
+
+        .tab-content { background: #1b222d; padding: 20px; border-radius: 0 0 8px 8px; flex: 1; }
+
+        /* Вкладка: ПРОФІЛЬ */
+        #tab-profile { display: none; }
+        .stats-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 15px; margin-top: 10px; }
+        .stat-box { background: #28313e; padding: 20px; border-radius: 6px; text-align: center; }
+        .stat-box .title { color: #8a96a3; font-size: 13px; text-transform: uppercase; margin-bottom: 8px; }
+        .stat-box .value { font-size: 24px; font-weight: bold; }
+
+        /* Вкладка: ІСТОРІЯ МАТЧІВ */
+        #tab-history { display: block; }
+        .match-row { display: flex; align-items: center; justify-content: space-between; background: #222a36; margin-bottom: 8px; border-radius: 4px; padding: 10px 20px; border-left: 5px solid #4a5a6a; }
+        .match-row.good { border-left-color: #22c55e; background: linear-gradient(90deg, rgba(34,197,94,0.1) 0%, rgba(34,42,54,1) 30%); }
+        .match-row.bad { border-left-color: #ef4444; background: linear-gradient(90deg, rgba(239,68,68,0.1) 0%, rgba(34,42,54,1) 30%); }
+        .m-block { display: flex; flex-direction: column; width: 15%; text-align: center; }
+        .m-block.agent { text-align: left; width: 25%; }
+        .m-val { font-size: 16px; font-weight: bold; }
+        .m-lbl { font-size: 12px; color: #8a96a3; margin-top: 3px; }
+
+        /* Вкладка: АГЕНТИ */
+        #tab-agents { display: none; }
+        .agents-table { width: 100%; border-collapse: collapse; text-align: center; }
+        .agents-table th { color: #8a96a3; text-transform: uppercase; font-size: 13px; padding: 15px; border-bottom: 2px solid #28313e; }
+        .agents-table td { padding: 15px; border-bottom: 1px solid #28313e; font-size: 15px; }
+        .agents-table tr:hover { background-color: #28313e; }
+        .agent-name-cell { display: flex; align-items: center; gap: 15px; font-weight: bold; font-size: 16px; }
+
+        .loading { text-align: center; font-size: 20px; margin-top: 50px; display: none; color: #ff4655; flex: 1;}
+
+        /* НОВЕ: ІСТОРІЯ ПОШУКІВ ВНИЗУ */
+        .recent-searches { max-width: 1200px; margin: 40px auto; text-align: center; padding: 20px; width: 100%; border-top: 1px solid #28313e; }
+        .recent-title { color: #8a96a3; font-size: 13px; text-transform: uppercase; margin-bottom: 15px; letter-spacing: 1px; }
+        .recent-list { display: flex; justify-content: center; gap: 12px; flex-wrap: wrap; }
+        .recent-item { background: #1b222d; color: #ece8e1; padding: 10px 20px; border-radius: 20px; cursor: pointer; font-size: 14px; border: 1px solid #3f4a57; transition: 0.2s; font-weight: bold; }
+        .recent-item:hover { background: #28313e; border-color: #ff4655; color: #ff4655; }
+    </style>
+</head>
+<body>
+<div id="auth-panel" style="position: absolute; top: 15px; right: 20px; z-index: 100;">
+    <button onclick="doLogin()" style="padding: 8px 15px; background: #28313e; color: white; border: none; cursor: pointer; border-radius: 4px;">Увійти</button>
+    <button onclick="doRegister()" style="padding: 8px 15px; background: #ff4655; color: white; border: none; cursor: pointer; border-radius: 4px;">Реєстрація</button>
+</div>
+<div id="user-panel" style="display: none; position: absolute; top: 15px; right: 20px; z-index: 100;">
+    <button id="btn-top-cabinet" onclick="openCabinet()" style="padding: 8px 15px; background: #00ffbc; color: #0f141d; font-weight: bold; border: none; cursor: pointer; border-radius: 4px; margin-right: 15px;">Мій кабінет</button>
+    <span style="margin-right: 15px; font-weight: bold; color: #00ffbc;">Авторизовано</span>
+    <button onclick="doLogout()" style="padding: 8px 15px; background: #ef4444; color: white; border: none; cursor: pointer; border-radius: 4px;">Вийти</button>
+</div>
+
+<div class="search-bar">
+    <input type="text" id="name" placeholder="Riot ID (напр. Ange1uw)">
+    <input type="text" id="tag" placeholder="Tagline (напр. naxyi)">
+    <button id="search-btn" onclick="analyzePlayer()">Шукати гравця</button>
+</div>
+
+<div class="loading" id="loader">Оновлюємо статистику... Зачекайте пару секунд.</div>
+
+<div class="main-container" id="tracker-main">
+    <aside class="sidebar">
+        <div class="player-card-bg" id="player-bg"></div>
+        <div class="player-info">
+            <div class="avatar-placeholder" id="avatar-letter">V</div>
+            <div class="player-name" id="p-name">Username</div>
+            <div class="player-tag" id="p-tag">#TAG</div>
+
+            <div class="rank-info">
+                <div class="rank-title">Поточний ранг</div>
+                <div class="rank-value" id="p-rank">Unranked</div>
+                <div class="level-value" id="p-level">Level: 0</div>
+            </div>
+            <button id="btn-link" style="display: none; width: 100%; margin-top: 15px; padding: 12px; background: #00ffbc; color: #0f141d; font-weight: bold; border: none; border-radius: 4px; cursor: pointer; text-transform: uppercase;" onclick="linkCurrentAccount()">
+                Прив'язати акаунт
+            </button>
+        </div>
+    </aside>
+
+    <main class="content-area">
+        <div class="tabs">
+            <button class="tab-btn" id="btn-profile" onclick="switchTab('profile')">Профіль</button>
+            <button class="tab-btn active" id="btn-history" onclick="switchTab('history')">Історія матчів</button>
+            <button class="tab-btn" id="btn-agents" onclick="switchTab('agents')">Агенти</button>
+            <button class="tab-btn" id="btn-leaderboard" onclick="switchTab('leaderboard'); loadLeaderboard();">Топ гравців</button>
+        </div>
+
+        <div class="tab-content">
+            <div id="tab-profile">
+                <h2 style="margin-bottom: 20px;">Середня статистика (останні матчі)</h2>
+                <div class="stats-grid">
+                    <div class="stat-box">
+                        <div class="title">Середній Rating 2.1</div>
+                        <div class="value" id="avg-rating" style="color: #ff4655;">0.00</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="title">Середній K/D</div>
+                        <div class="value" id="avg-kd">0.00</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="title">Середній HS %</div>
+                        <div class="value" id="avg-hs">0%</div>
+                    </div>
+                    <div class="stat-box">
+                        <div class="title">Середній ADR</div>
+                        <div class="value" id="avg-adr">0</div>
+                    </div>
+                </div>
+                <div id="p-verdict" style="margin-top: 20px; font-size: 18px; color: #8a96a3;"></div>
+            </div>
+
+            <div id="tab-history">
+                <div id="matches-list"></div>
+            </div>
+
+            <div id="tab-agents">
+                <table class="agents-table">
+                    <thead>
+                    <tr>
+                        <th style="text-align: left;">Агент</th>
+                        <th>Матчі</th>
+                        <th>K/D</th>
+                        <th>HS %</th>
+                        <th>ADR</th>
+                        <th>Kills</th>
+                        <th>Deaths</th>
+                        <th>Assists</th>
+                    </tr>
+                    </thead>
+                    <tbody id="agents-body"></tbody>
+                </table>
+            </div>
+
+            <div id="tab-leaderboard" style="display: none;">
+                <h2 style="margin-bottom: 20px; text-align: center; color: #ff4655;">ЛОКАЛЬНИЙ РЕЙТИНГ ГРАВЦІВ</h2>
+                <table class="agents-table">
+                    <thead>
+                    <tr>
+                        <th>Місце</th>
+                        <th style="text-align: left;">Гравець</th>
+                        <th>Ранг</th>
+                        <th>Рівень</th>
+                        <th>K/D</th>
+                        <th>HS %</th>
+                        <th>Rating 2.1</th>
+                    </tr>
+                    </thead>
+                    <tbody id="leaderboard-body"></tbody>
+                </table>
+            </div>
+        </div> </main> </div> <div class="main-container" id="cabinet-container" style="display: none; flex-direction: column; max-width: 800px; margin: 30px auto; background: #1b222d; padding: 20px; border-radius: 8px; border-top: 3px solid #00ffbc;">
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 20px;">
+        <h2 style="color: #00ffbc; text-transform: uppercase;">Мій кабінет</h2>
+        <button onclick="closeCabinet()" style="padding: 8px 15px; background: #28313e; color: white; border: none; cursor: pointer; border-radius: 4px;">Закрити</button>
+    </div>
+    <div id="linked-accounts-list" style="display: flex; flex-direction: column; gap: 10px;"></div>
+</div>
+
+<div class="recent-searches" id="recent-searches" style="display: none;">
+    <div class="recent-title">Останні переглянуті профілі</div>
+    <div class="recent-list" id="recent-list"></div>
+</div>
+
+<script>
+    // ЗАВАНТАЖЕННЯ ІСТОРІЇ ПРИ ВІДКРИТТІ САЙТУ
+    window.onload = () => {
+        loadRecentSearches();
+        checkAuth(); // Перевіряємо, чи є токен при оновленні сторінки
+    };
+
+    function loadRecentSearches() {
+        let history = JSON.parse(localStorage.getItem('udtracker_history')) || [];
+        const container = document.getElementById('recent-searches');
+        const list = document.getElementById('recent-list');
+
+        if (history.length === 0) {
+            container.style.display = 'none';
+            return;
+        }
+
+        container.style.display = 'block';
+        list.innerHTML = '';
+
+        // Створюємо кнопки для кожного збереженого пошуку
+        history.forEach(item => {
+            const div = document.createElement('div');
+            div.className = 'recent-item';
+            div.innerText = `${item.name}#${item.tag}`;
+            div.onclick = () => {
+                document.getElementById('name').value = item.name;
+                document.getElementById('tag').value = item.tag;
+                analyzePlayer();
+            };
+            list.appendChild(div);
+        });
+    }
+
+    function saveToRecent(name, tag) {
+        let history = JSON.parse(localStorage.getItem('udtracker_history')) || [];
+
+        // Видаляємо такий самий запис, якщо він вже є
+        history = history.filter(item => !(item.name.toLowerCase() === name.toLowerCase() && item.tag.toLowerCase() === tag.toLowerCase()));
+
+        // Додаємо новий пошук на початок масиву
+        history.unshift({ name: name, tag: tag });
+
+        if (history.length > 6) {
+            history.pop();
+        }
+
+        localStorage.setItem('udtracker_history', JSON.stringify(history));
+        loadRecentSearches();
+    }
+
+    function switchTab(tab) {
+        // Ховаємо/показуємо контент
+        document.getElementById('tab-profile').style.display = tab === 'profile' ? 'block' : 'none';
+        document.getElementById('tab-history').style.display = tab === 'history' ? 'block' : 'none';
+        document.getElementById('tab-agents').style.display = tab === 'agents' ? 'block' : 'none';
+        document.getElementById('tab-leaderboard').style.display = tab === 'leaderboard' ? 'block' : 'none'; // ДОДАНО
+
+        // Підсвічуємо активну кнопку
+        document.getElementById('btn-profile').className = tab === 'profile' ? 'tab-btn active' : 'tab-btn';
+        document.getElementById('btn-history').className = tab === 'history' ? 'tab-btn active' : 'tab-btn';
+        document.getElementById('btn-agents').className = tab === 'agents' ? 'tab-btn active' : 'tab-btn';
+        document.getElementById('btn-leaderboard').className = tab === 'leaderboard' ? 'tab-btn active' : 'tab-btn'; // ДОДАНО
+    }
+
+    async function analyzePlayer() {
+        const name = document.getElementById('name').value.trim();
+        const tag = document.getElementById('tag').value.trim();
+        const btn = document.getElementById('search-btn');
+
+        if(!name || !tag) { alert("Введіть нік і тег!"); return; }
+
+        document.getElementById('tracker-main').style.display = 'none';
+        document.getElementById('loader').style.display = 'block';
+        btn.disabled = true;
+
+        try {
+            await fetch(`/api/v1/players/sync/${name}/${tag}`);
+            await fetch(`/api/v1/players/matches/${name}/${tag}`);
+            const statsResp = await fetch(`/api/v1/players/stats/${name}/${tag}`);
+            const verdictText = await statsResp.text();
+            const profileResp = await fetch(`/api/v1/players/profile/${name}/${tag}`);
+            const profile = await profileResp.json();
+            const historyResp = await fetch(`/api/v1/players/history/${name}/${tag}`);
+            const matches = await historyResp.json();
+
+            saveToRecent(name, tag);
+
+            document.getElementById('p-name').innerText = name;
+            document.getElementById('p-tag').innerText = '#' + tag;
+            document.getElementById('avatar-letter').innerText = name.charAt(0).toUpperCase();
+            document.getElementById('p-rank').innerText = profile.currentRank || "Невідомо";
+            document.getElementById('p-level').innerText = "Рівень: " + (profile.accountLevel || "0");
+
+            if (profile.isLinked) {
+                document.getElementById('btn-link').style.display = 'none';
+            } else {
+                // Показуємо тільки якщо юзер залогінений
+                document.getElementById('btn-link').style.display = localStorage.getItem('jwt_token') ? 'block' : 'none';
+            }
+
+            if(profile.playerCard) {
+                document.getElementById('player-bg').style.backgroundImage = `url(${profile.playerCard})`;
+            }
+
+            let matchesHtml = '';
+            let tKills = 0, tDeaths = 0, tADR = 0, tHS = 0;
+            let agentStats = {};
+
+            matches.forEach(m => {
+                tKills += m.kills; tDeaths += m.deaths;
+                tADR += m.adr; tHS += m.hsPercent;
+
+                let agentName = m.agent || 'Невідомо';
+                if (!agentStats[agentName]) {
+                    agentStats[agentName] = { matches: 0, kills: 0, deaths: 0, assists: 0, adr: 0, hs: 0 };
+                }
+                agentStats[agentName].matches += 1;
+                agentStats[agentName].kills += m.kills;
+                agentStats[agentName].deaths += m.deaths;
+                agentStats[agentName].assists += m.assists;
+                agentStats[agentName].adr += m.adr;
+                agentStats[agentName].hs += m.hsPercent;
+
+                let isGood = m.rating21 >= 1.0;
+                let rowClass = isGood ? 'match-row good' : 'match-row bad';
+                let ratingColor = isGood ? '#22c55e' : '#ef4444';
+                let kdRatio = m.deaths === 0 ? m.kills : (m.kills / m.deaths).toFixed(2);
+
+                // ОДРАЗУ ТУТ ВИВОДИМО РЕЖИМ (m.mode) РАЗОМ З КАРТОЮ
+                matchesHtml += `
+                        <div class="${rowClass}">
+                            <div class="m-block agent">
+                                <span class="m-val">${agentName}</span>
+                                <span class="m-lbl">
+                                    <span style="color: #ece8e1; font-weight: bold;">${m.mode || 'Unknown'}</span> • ${m.map}
+                                </span>
+                            </div>
+                            <div class="m-block">
+                                <span class="m-val">${m.kills} / ${m.deaths} / ${m.assists}</span>
+                                <span class="m-lbl">K / D / A</span>
+                            </div>
+                            <div class="m-block">
+                                <span class="m-val">${kdRatio}</span>
+                                <span class="m-lbl">K/D</span>
+                            </div>
+                            <div class="m-block">
+                                <span class="m-val">${m.hsPercent}%</span>
+                                <span class="m-lbl">Headshot %</span>
+                            </div>
+                            <div class="m-block">
+                                <span class="m-val">${m.adr}</span>
+                                <span class="m-lbl">ADR</span>
+                            </div>
+                            <div class="m-block">
+                                <span class="m-val" style="color: ${ratingColor}; font-size: 18px;">${m.rating21.toFixed(2)}</span>
+                                <span class="m-lbl">Rating 2.1</span>
+                            </div>
+                        </div>
+                    `;
+            });
+
+            document.getElementById('matches-list').innerHTML = matchesHtml;
+
+            let agentsHtml = '';
+            Object.entries(agentStats).sort((a, b) => b[1].matches - a[1].matches).forEach(([agent, stats]) => {
+                let kd = stats.deaths === 0 ? stats.kills.toFixed(2) : (stats.kills / stats.deaths).toFixed(2);
+                let avgAdr = Math.round(stats.adr / stats.matches);
+                let avgHs = Math.round(stats.hs / stats.matches);
+
+                agentsHtml += `
+                        <tr>
+                            <td class="agent-name-cell"><span style="color: #ff4655;">${agent}</span></td>
+                            <td style="font-weight: bold;">${stats.matches}</td>
+                            <td style="color: ${kd >= 1 ? '#22c55e' : '#ece8e1'}; font-weight: bold;">${kd}</td>
+                            <td>${avgHs}%</td>
+                            <td>${avgAdr}</td>
+                            <td>${stats.kills}</td>
+                            <td>${stats.deaths}</td>
+                            <td>${stats.assists}</td>
+                        </tr>
+                    `;
+            });
+            document.getElementById('agents-body').innerHTML = agentsHtml;
+
+            let mCount = matches.length || 1;
+            document.getElementById('avg-rating').innerText = profile.averageRating ? profile.averageRating.toFixed(2) : "0.00";
+            document.getElementById('avg-kd').innerText = (tKills / (tDeaths || 1)).toFixed(2);
+            document.getElementById('avg-hs').innerText = Math.round(tHS / mCount) + '%';
+            document.getElementById('avg-adr').innerText = Math.round(tADR / mCount);
+            document.getElementById('p-verdict').innerText = verdictText;
+
+            document.getElementById('loader').style.display = 'none';
+            document.getElementById('tracker-main').style.display = 'flex';
+            btn.disabled = false;
+
+        } catch (err) {
+            alert("Помилка зв'язку з бекендом!");
+            document.getElementById('loader').style.display = 'none';
+            btn.disabled = false;
+        }
+    }
+    async function loadLeaderboard() {
+        try {
+            const response = await fetch('/api/v1/players/leaderboard');
+            const players = await response.json();
+            let html = '';
+
+            players.forEach((p, index) => {
+                let isTop3 = index < 3 ? 'color: #00ffbc; font-size: 18px;' : '';
+                let rColor = p.averageRating >= 1.0 ? '#22c55e' : '#ece8e1';
+
+                html += `
+                        <tr style="border-left: ${index === 0 ? '5px solid #ff4655' : 'none'}">
+                            <td style="font-weight: bold; ${isTop3}">${index + 1}</td>
+                            <td class="agent-name-cell">
+                                <div style="width: 30px; height: 30px; border-radius: 50%; background-image: url(${p.playerCard || ''}); background-size: cover;"></div>
+                                <span style="cursor: pointer; color: white;" onclick="document.getElementById('name').value='${p.riotId}'; document.getElementById('tag').value='${p.tagLine}'; analyzePlayer();">${p.riotId}#${p.tagLine}</span>
+                            </td>
+                            <td>${p.currentRank || 'Unranked'}</td>
+                            <td>${p.accountLevel}</td>
+                            <td>${p.averageKd ? p.averageKd.toFixed(2) : '0'}</td>
+                            <td>${p.averageHs || '0'}%</td>
+                            <td style="color: ${rColor}; font-weight: bold; font-size: 16px;">${p.averageRating ? p.averageRating.toFixed(2) : '0.00'}</td>
+                        </tr>
+                    `;
+            });
+            document.getElementById('leaderboard-body').innerHTML = html;
+        } catch (err) {
+            console.error("Помилка завантаження лідерборду", err);
+        }
+    }
+    function checkAuth() {
+        const token = localStorage.getItem('jwt_token');
+        if (token) {
+            document.getElementById('auth-panel').style.display = 'none';
+            document.getElementById('user-panel').style.display = 'block';
+            document.getElementById('btn-link').style.display = 'block';
+        } else {
+            document.getElementById('auth-panel').style.display = 'block';
+            document.getElementById('user-panel').style.display = 'none';
+            document.getElementById('btn-link').style.display = 'none';
+        }
+    }
+
+    async function doRegister() {
+        const email = prompt("РЕЄСТРАЦІЯ\nВведіть ваш email:");
+        if (!email) return;
+        const pass = prompt("Введіть пароль (мінімум 6 символів):");
+        if (!pass) return;
+
+        const res = await fetch('/api/auth/register', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: email, password: pass })
+        });
+        alert(await res.text());
+    }
+
+    async function doLogin() {
+        const email = prompt("ВХІД\nВведіть ваш email:");
+        if (!email) return;
+        const pass = prompt("Введіть пароль:");
+        if (!pass) return;
+
+        const res = await fetch('/api/auth/login', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ email: email, password: pass })
+        });
+
+        if (res.ok) {
+            const token = await res.text();
+            localStorage.setItem('jwt_token', token); // Зберігаємо токен у пам'ять браузера
+            checkAuth();
+            alert("Успішний вхід!");
+        } else {
+            alert("Помилка логіну! Перевірте дані.");
+        }
+    }
+
+    function doLogout() {
+        localStorage.removeItem('jwt_token');
+        checkAuth();
+        alert("Ви вийшли з системи.");
+    }
+
+    async function linkCurrentAccount() {
+        const token = localStorage.getItem('jwt_token');
+        const name = document.getElementById('p-name').innerText;
+        const tag = document.getElementById('p-tag').innerText.replace('#', '');
+
+        if (name === "Username") {
+            alert("Спочатку знайдіть гравця через пошук!");
+            return;
+        }
+
+        try {
+            const res = await fetch(`/api/v1/players/link/${name}/${tag}`, {
+                method: 'POST',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            const text = await res.text();
+            alert(text);
+
+            // НОВЕ: Якщо успішно — ховаємо кнопку
+            if (res.ok || text.includes("успішно")) {
+                document.getElementById('btn-link').style.display = 'none';
+            }
+        } catch (err) {
+            alert("Помилка прив'язки");
+        }
+    }
+    async function loadMyProfile() {
+        const token = localStorage.getItem('jwt_token');
+        if(!token) return;
+
+        try {
+            const res = await fetch('/api/user/profile', {
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            if (res.ok) {
+                const data = await res.json();
+
+                // Формуємо UI з глобальним рейтингом
+                let globalRatingHtml = data.globalRating
+                    ? `<p style="margin-bottom:15px; color: #8a96a3;">Global Rating: <b style="color: #00ffbc; font-size: 18px;">${data.globalRating.toFixed(2)}</b></p>`
+                    : '';
+
+                let html = `
+                <div style="background: #28313e; padding: 15px; border-radius: 6px; margin-bottom: 20px;">
+                    <p style="margin-bottom:5px; color: #8a96a3;">Email: <b style="color: #ece8e1;">${data.email}</b></p>
+                    ${globalRatingHtml}
+                </div>
+            `;
+
+                if (data.accounts.length === 0) {
+                    html += '<p>Немає прив\'язаних ігрових акаунтів.</p>';
+                } else {
+                    data.accounts.forEach(acc => {
+                        html += `
+                    <div class="match-row" style="border-left-color: #00ffbc; position: relative;">
+                        <div class="m-block agent" style="width: 50%; cursor:pointer;" onclick="document.getElementById('name').value='${acc.riotId}'; document.getElementById('tag').value='${acc.tagLine}'; analyzePlayer();">
+                            <span class="m-val">${acc.riotId}#${acc.tagLine}</span>
+                            <span class="m-lbl">${acc.currentRank || 'Unranked'}</span>
+                        </div>
+                        <div class="m-block">
+                            <span class="m-val" style="color: #00ffbc;">${acc.averageRating ? acc.averageRating.toFixed(2) : '0.00'}</span>
+                            <span class="m-lbl">Avg Rating</span>
+                        </div>
+                        <button onclick="unlinkAccount('${acc.riotId}', '${acc.tagLine}')" style="background: #ef4444; color: white; border: none; padding: 5px 10px; border-radius: 4px; cursor: pointer; position: absolute; right: 20px;">Відв'язати</button>
+                    </div>`;
+                    });
+                }
+                document.getElementById('linked-accounts-list').innerHTML = html;
+            }
+        } catch (err) {
+            console.error("Помилка:", err);
+        }
+    }
+
+    async function unlinkAccount(riotId, tagLine) {
+        if (!confirm(`Ви дійсно хочете відв'язати акаунт ${riotId}#${tagLine}?`)) return;
+
+        const token = localStorage.getItem('jwt_token');
+        try {
+            const res = await fetch(`/api/user/link/${riotId}/${tagLine}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${token}` }
+            });
+
+            alert(await res.text());
+            if (res.ok) loadMyProfile(); // Оновлюємо список після видалення
+        } catch (err) {
+            alert("Помилка при відв'язуванні.");
+        }
+    }
+    function openCabinet() {
+        document.getElementById('tracker-main').style.display = 'none';
+        document.getElementById('recent-searches').style.display = 'none';
+        document.getElementById('cabinet-container').style.display = 'flex';
+        loadMyProfile();
+    }
+
+    function closeCabinet() {
+        document.getElementById('cabinet-container').style.display = 'none';
+        loadRecentSearches(); // Повертаємо історію
+    }
+    // Не забудь оновити функцію switchTab, щоб вона ховала/показувала новий таб:
+    // document.getElementById('tab-leaderboard').style.display = tab === 'leaderboard' ? 'block' : 'none';
+    // document.getElementById('btn-leaderboard').className = tab === 'leaderboard' ? 'tab-btn active' : 'tab-btn';
+</script>
+</body>
+</html>
