@@ -336,6 +336,8 @@
     function renderValorantUI(name, tag, profile, matches, verdict) {
         updateSidebar(name, '#' + tag, profile.currentRank, profile.accountLevel, profile.playerCard);
 
+        document.getElementById('btn-link').style.display = (localStorage.getItem('jwt_token') && !profile.isLinked) ? 'block' : 'none';
+
         let tKills = 0, tDeaths = 0, tADR = 0, tHS = 0;
         let html = matches.map(m => {
             tKills += m.kills; tDeaths += m.deaths; tADR += m.adr; tHS += m.hsPercent;
@@ -350,6 +352,8 @@
 
     function renderCs2UI(profile, matches) {
         updateSidebar(profile.nickname, "Faceit", profile.currentRank, profile.accountLevel, profile.playerCard);
+
+        document.getElementById('btn-link').style.display = (localStorage.getItem('jwt_token') && !profile.isLinked) ? 'block' : 'none';
 
         let html = matches.map(m => renderMatchRow("CS2", `Faceit • ${m.map}`, m, m.rating21)).join('');
 
@@ -488,8 +492,19 @@
     function doLogout() { localStorage.removeItem('jwt_token'); checkAuth(); switchMainView('hub'); }
 
     async function linkCurrentAccount() {
-        const name = document.getElementById('p-name').innerText, tag = document.getElementById('p-tag').innerText.replace('#', '');
-        const res = await fetch(`/api/v1/players/link/${name}/${tag}`, { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('jwt_token')}` } });
+        const name = document.getElementById('p-name').innerText;
+        const tagText = document.getElementById('p-tag').innerText;
+
+        // Визначаємо правильний URL залежно від гри
+        const url = tagText === "Faceit"
+            ? `/api/v1/players/link/cs2/${name}`
+            : `/api/v1/players/link/${name}/${tagText.replace('#', '')}`;
+
+        const res = await fetch(url, {
+            method: 'POST',
+            headers: { 'Authorization': `Bearer ${localStorage.getItem('jwt_token')}` }
+        });
+
         if (res.ok) document.getElementById('btn-link').style.display = 'none';
         alert(await res.text());
     }
@@ -507,12 +522,13 @@
                 let html = data.accounts.length === 0 ? '<p style="color:#8a96a3;">Немає прив\'язаних акаунтів.</p>' : '';
                 data.accounts.forEach(acc => {
                     let gameType = acc.gameType || 'VALORANT';
-                    let displayId = gameType === 'CS2' ? acc.steamId : `${acc.riotId}#${acc.tagLine}`;
+                    let displayId = gameType === 'CS2' ? acc.nickname : `${acc.riotId}#${acc.tagLine}`;
+                    let searchId = gameType === 'CS2' ? acc.nickname : acc.riotId;
                     html += `
                     <div class="game-account-card">
                         <div>
                             <span class="game-badge">${gameType}</span>
-                            <div style="font-size: 18px; font-weight: bold; cursor:pointer;" onclick="switchMainView('search'); document.getElementById('game-selector').value='${gameType.toLowerCase()}'; document.getElementById('game-selector').dispatchEvent(new Event('change')); document.getElementById('name').value='${gameType === 'CS2' ? acc.steamId : acc.riotId}'; if('${gameType}'==='VALORANT') document.getElementById('tag').value='${acc.tagLine}'; analyzePlayer();">${displayId}</div>
+                            <div style="font-size: 18px; font-weight: bold; cursor:pointer;" onclick="switchMainView('search'); document.getElementById('game-selector').value='${gameType.toLowerCase()}'; document.getElementById('game-selector').dispatchEvent(new Event('change')); document.getElementById('name').value='${searchId}'; if('${gameType}'==='VALORANT') document.getElementById('tag').value='${acc.tagLine}'; analyzePlayer();">${displayId}</div>
                             <div style="color: #8a96a3; font-size: 13px; margin-top: 5px;">${acc.currentRank || 'Unranked'}</div>
                         </div>
                         <div style="text-align: right;">

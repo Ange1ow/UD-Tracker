@@ -9,6 +9,7 @@ import com.udtracker.api.model.GameType;
 public class LinkedAccountDto {
     private GameType gameType;
     private String steamId;
+    private String nickname;
     private String riotId;
     private String tagLine;
     private String currentRank;

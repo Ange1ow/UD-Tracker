@@ -309,4 +309,23 @@ public class PlayerController {
         return playerRepository.findByNicknameIgnoreCaseAndGameType(nickname, GameType.CS2)
                 .orElseThrow(() -> new RuntimeException("Гравця Faceit не знайдено"));
     }
+    @PostMapping("/link/cs2/{nickname}")
+    @SecurityRequirement(name = "Bearer Authentication")
+    public String linkCs2Account(@PathVariable String nickname, Principal principal) {
+        if (principal == null) {
+            return "Помилка: Ви не авторизовані!";
+        }
+
+        AppUser currentUser = appUserRepository.findByEmail(principal.getName())
+                .orElseThrow(() -> new RuntimeException("Користувача не знайдено"));
+
+        // Шукаємо вже існуючий (завантажений) профіль CS2
+        Player player = playerRepository.findByNicknameIgnoreCaseAndGameType(nickname, GameType.CS2)
+                .orElseThrow(() -> new RuntimeException("Спочатку знайдіть профіль через пошук!"));
+
+        player.setAppUser(currentUser);
+        playerRepository.save(player);
+
+        return String.format("Faceit акаунт %s успішно прив'язано до email: %s", nickname, currentUser.getEmail());
+    }
 }

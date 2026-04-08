@@ -35,6 +35,7 @@ public class    UserController {
                 .map(p -> new LinkedAccountDto(
                         p.getGameType(),
                         p.getSteamId(),
+                        p.getNickname(),
                         p.getRiotId(),
                         p.getTagLine(),
                         p.getCurrentRank(),
