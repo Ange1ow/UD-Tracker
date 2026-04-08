@@ -1,18 +1,28 @@
 package com.udtracker.api.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonProperty;
 import jakarta.persistence.*;
 import lombok.Data;
 import java.time.LocalDateTime;
-import com.fasterxml.jackson.annotation.JsonProperty;
 
 @Entity
-@Table(name = "players")
+@Table(name = "players", uniqueConstraints = {
+        @UniqueConstraint(columnNames = {"gameType", "riotId", "tagLine"}),
+        @UniqueConstraint(columnNames = {"gameType", "steamId"})
+})
 @Data
 public class Player {
     @Id
     @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
+
+    // Змініть тип поля та додайте анотацію @Enumerated
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false)
+    private GameType gameType; // було String
+    private String steamId;
+    private String nickname;
 
     private String riotId;
     private String tagLine;
@@ -22,11 +32,8 @@ public class Player {
     private String playerCard;
     private String title;
 
-
-    // Додамо статистику останнього оновлення
     private LocalDateTime lastUpdated;
-    private Double averageRating; // Додай це поле
-
+    private Double averageRating;
     private Double averageKd;
     private Integer averageHs;
     private Integer averageAdr;

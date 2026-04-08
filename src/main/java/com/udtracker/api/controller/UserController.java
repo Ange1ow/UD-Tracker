@@ -18,7 +18,7 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api/user")
 @RequiredArgsConstructor
-public class UserController {
+public class    UserController {
 
     private final AppUserRepository appUserRepository;
     private final PlayerRepository playerRepository;
@@ -33,6 +33,8 @@ public class UserController {
 
         List<LinkedAccountDto> accounts = user.getGameAccounts().stream()
                 .map(p -> new LinkedAccountDto(
+                        p.getGameType(),
+                        p.getSteamId(),
                         p.getRiotId(),
                         p.getTagLine(),
                         p.getCurrentRank(),

@@ -15,21 +15,25 @@ import java.security.Principal;
 import io.swagger.v3.oas.annotations.security.SecurityRequirement;
 import com.udtracker.api.repository.AppUserRepository;
 import com.udtracker.api.model.AppUser;
+import com.udtracker.api.model.GameType;
+import com.udtracker.api.service.FaceitApiService;
 
 @RestController
 @RequestMapping("/api/v1/players")
-@RequiredArgsConstructor // Створює конструктор для всіх final полів
+@RequiredArgsConstructor
 public class PlayerController {
 
     private final ExternalApiService apiService;
     private final RatingService ratingService;
     private final PlayerRepository playerRepository;
-    private final MatchRepository matchRepository; // Робимо final
+    private final MatchRepository matchRepository;
     private final AppUserRepository appUserRepository;
+    private final FaceitApiService faceitApiService;
+
+    // ------------------- VALORANT ENDPOINTS -------------------
 
     @GetMapping("/sync/{name}/{tag}")
     public String syncPlayer(@PathVariable String name, @PathVariable String tag) {
-        // 1. Отримуємо базовий профіль (Рівень, Картка, Регіон)
         JsonNode response = apiService.getPlayerData(name, tag);
 
         if (response != null && response.has("data")) {
@@ -46,11 +50,9 @@ public class PlayerController {
             player.setRegion(region);
             player.setPlayerCard(data.path("card").path("wide").asText());
 
-            // 2. НОВИЙ КРОК: Отримуємо ранг окремим запитом
             JsonNode mmrResponse = apiService.getPlayerMMR(region, name, tag);
 
             if (mmrResponse != null && mmrResponse.has("data")) {
-                // Шлях до рангу у v2 MMR API
                 String rank = mmrResponse.path("data").path("current_data").path("currenttierpatched").asText();
                 player.setCurrentRank(rank != null && !rank.isEmpty() && !rank.equals("null") ? rank : "Unranked");
             } else {
@@ -58,7 +60,6 @@ public class PlayerController {
             }
 
             playerRepository.save(player);
-
             return String.format("Синхронізовано! Гравець: %s#%s, Ранг: %s", name, tag, player.getCurrentRank());
         }
         return "Помилка: дані не отримано.";
@@ -70,13 +71,11 @@ public class PlayerController {
         Player player = playerRepository.findByRiotIdAndTagLine(name, tag)
                 .orElseThrow(() -> new RuntimeException("Спочатку синхронізуйте профіль!"));
 
-        // 1. ЗАХИСТ ВІД СПАМУ API (КЕШУВАННЯ НА 10 ХВИЛИН)
         if (player.getLastUpdated() != null &&
                 java.time.temporal.ChronoUnit.MINUTES.between(player.getLastUpdated(), java.time.LocalDateTime.now()) < 10) {
             return "Дані актуальні. Завантажено з локальної бази (Кеш).";
         }
 
-        // 2. Якщо пройшло 10 хв - робимо запит до Henrik API
         JsonNode response = apiService.getMatchHistory(player.getRegion(), name, tag);
 
         if (response != null && response.has("data")) {
@@ -124,7 +123,6 @@ public class PlayerController {
                         matchData.setRating21(finalRating); matchData.setPlayer(player);
                         matchRepository.save(matchData);
 
-                        // Збираємо суми для середньої статистики
                         totalKills += kills; totalDeaths += deaths; totalHs += hsPercent;
                         totalAdr += adr; totalRating += finalRating;
                         count++;
@@ -133,13 +131,12 @@ public class PlayerController {
                 }
             }
 
-            // 3. ЗБЕРІГАЄМО ВСЮ СТАТИСТИКУ ПРЯМО В ПРОФІЛЬ ГРАВЦЯ В БД
             if (count > 0) {
                 player.setAverageKd(totalDeaths == 0 ? totalKills : totalKills / totalDeaths);
                 player.setAverageHs((int) (totalHs / count));
                 player.setAverageAdr((int) (totalAdr / count));
                 player.setAverageRating(totalRating / count);
-                player.setLastUpdated(java.time.LocalDateTime.now()); // СТАВИМО ШТАМП ЧАСУ!
+                player.setLastUpdated(java.time.LocalDateTime.now());
                 playerRepository.save(player);
             }
 
@@ -147,12 +144,12 @@ public class PlayerController {
         }
         return "Не вдалося отримати історію матчів.";
     }
+
     @GetMapping("/stats/{name}/{tag}")
     public String getPlayerStats(@PathVariable String name, @PathVariable String tag) {
         Player player = playerRepository.findByRiotIdAndTagLine(name, tag)
                 .orElseThrow(() -> new RuntimeException("Гравця не знайдено. Спочатку синхронізуйте матчі!"));
 
-        // Беремо рейтинг прямо з профілю, який ми щойно закешували!
         Double avgRating = player.getAverageRating();
 
         if (avgRating == null || avgRating == 0.0) {
@@ -172,6 +169,7 @@ public class PlayerController {
                 name, tag, avgRating, skillLevel
         );
     }
+
     @GetMapping("/history/{name}/{tag}")
     public List<MatchData> getMatchHistory(@PathVariable String name, @PathVariable String tag) {
         Player player = playerRepository.findByRiotIdAndTagLine(name, tag)
@@ -179,38 +177,136 @@ public class PlayerController {
 
         return matchRepository.findByPlayerId(player.getId());
     }
+
     @GetMapping("/profile/{name}/{tag}")
     public Player getProfile(@PathVariable String name, @PathVariable String tag) {
         return playerRepository.findByRiotIdAndTagLine(name, tag)
                 .orElseThrow(() -> new RuntimeException("Гравця не знайдено"));
     }
+
+    // ------------------- GLOBAL ENDPOINTS -------------------
+
     @GetMapping("/leaderboard")
     public List<Player> getLeaderboard() {
         return playerRepository.findTop10ByOrderByAverageRatingDesc();
     }
+
     @PostMapping("/link/{name}/{tag}")
-    @SecurityRequirement(name = "Bearer Authentication") // Вказуємо Swagger, що тут потрібен токен
+    @SecurityRequirement(name = "Bearer Authentication")
     public String linkAccount(@PathVariable String name, @PathVariable String tag, Principal principal) {
-        // Якщо токена немає, сюди навіть не дійде (зупинить JwtFilter), але перевірка не завадить
         if (principal == null) {
             return "Помилка: Ви не авторизовані!";
         }
 
-        // 1. Знаходимо поточного юзера в БД (його email лежить у principal)
         AppUser currentUser = appUserRepository.findByEmail(principal.getName())
                 .orElseThrow(() -> new RuntimeException("Користувача не знайдено"));
 
-        // 2. Шукаємо ігровий профіль (або створюємо новий порожній, якщо ще не синхронізували)
         Player player = playerRepository.findByRiotIdAndTagLine(name, tag)
                 .orElse(new Player());
 
-        // 3. Зв'язуємо сутності
         player.setRiotId(name);
         player.setTagLine(tag);
-        player.setAppUser(currentUser); // ПРИВ'ЯЗКА!
+        player.setAppUser(currentUser);
 
         playerRepository.save(player);
 
         return String.format("Ігровий акаунт %s#%s успішно прив'язано до email: %s", name, tag, currentUser.getEmail());
+    }
+
+    // ------------------- CS2 (Faceit) ENDPOINTS -------------------
+
+    @GetMapping("/sync/cs2/{nickname}")
+    public String syncCs2FaceitPlayer(@PathVariable String nickname) {
+        JsonNode profile = faceitApiService.getPlayerProfile(nickname);
+        if (profile == null || !profile.has("player_id")) {
+            throw new RuntimeException("Гравця Faceit не знайдено");
+        }
+
+        String playerId = profile.path("player_id").asText();
+        String avatar = profile.path("avatar").asText();
+        JsonNode cs2Data = profile.path("games").path("cs2");
+
+        int faceitLevel = cs2Data != null && cs2Data.has("skill_level") ? cs2Data.path("skill_level").asInt() : 0;
+        int faceitElo = cs2Data != null && cs2Data.has("faceit_elo") ? cs2Data.path("faceit_elo").asInt() : 0;
+
+        Player player = playerRepository.findByNicknameIgnoreCaseAndGameType(nickname, GameType.CS2)
+                .orElse(new Player());
+
+        player.setSteamId(playerId);
+        player.setGameType(GameType.CS2);
+        player.setNickname(profile.path("nickname").asText());
+        player.setPlayerCard(avatar.isEmpty() ? null : avatar);
+        player.setCurrentRank("Level " + faceitLevel + " (" + faceitElo + " ELO)");
+        player.setAccountLevel(faceitLevel);
+
+        JsonNode stats = faceitApiService.getPlayerStats(playerId);
+        if (stats != null && stats.has("lifetime")) {
+            JsonNode lifetime = stats.path("lifetime");
+            player.setAverageKd(Double.parseDouble(lifetime.path("Average K/D Ratio").asText("0")));
+            player.setAverageHs((int) Double.parseDouble(lifetime.path("Average Headshots %").asText("0")));
+            player.setAverageRating(player.getAverageKd());
+        }
+
+        player.setLastUpdated(java.time.LocalDateTime.now());
+        playerRepository.save(player);
+        return "Синхронізовано Faceit: " + nickname;
+    }
+
+    @Transactional
+    @GetMapping("/matches/cs2/{nickname}")
+    public String syncCs2FaceitMatches(@PathVariable String nickname) {
+        Player player = playerRepository.findByNicknameIgnoreCaseAndGameType(nickname, GameType.CS2)
+                .orElseThrow(() -> new RuntimeException("Спочатку синхронізуйте профіль!"));
+
+        JsonNode history = faceitApiService.getMatchHistory(player.getSteamId());
+        if (history != null && history.has("items")) {
+            matchRepository.deleteByPlayerId(player.getId());
+
+            for (JsonNode match : history.path("items")) {
+                String matchId = match.path("match_id").asText();
+                JsonNode matchStats = faceitApiService.getMatchStats(matchId);
+                if (matchStats == null || !matchStats.has("rounds")) continue;
+
+                JsonNode roundData = matchStats.path("rounds").get(0);
+                String map = roundData.path("round_stats").path("Map").asText();
+                String score = roundData.path("round_stats").path("Score").asText();
+
+                for (JsonNode team : roundData.path("teams")) {
+                    for (JsonNode p : team.path("players")) {
+                        if (p.path("player_id").asText().equals(player.getSteamId())) {
+                            JsonNode pStats = p.path("player_stats");
+                            MatchData md = new MatchData();
+                            md.setMatchId(matchId);
+                            md.setMode("Faceit 5v5");
+                            md.setMap(map + " (" + score + ")");
+                            md.setKills(Integer.parseInt(pStats.path("Kills").asText("0")));
+                            md.setDeaths(Integer.parseInt(pStats.path("Deaths").asText("0")));
+                            md.setAssists(Integer.parseInt(pStats.path("Assists").asText("0")));
+                            md.setHsPercent((int) Double.parseDouble(pStats.path("Headshots %").asText("0")));
+                            md.setRating21(Double.parseDouble(pStats.path("K/D Ratio").asText("0")));
+                            md.setPlayer(player);
+                            md.setAgent("CS2");
+                            matchRepository.save(md);
+                            break;
+                        }
+                    }
+                }
+            }
+            return "Матчі Faceit оновлено!";
+        }
+        return "Не вдалося отримати історію Faceit.";
+    }
+
+    @GetMapping("/history/cs2/{nickname}")
+    public List<MatchData> getCs2History(@PathVariable String nickname) {
+        Player player = playerRepository.findByNicknameIgnoreCaseAndGameType(nickname, GameType.CS2)
+                .orElseThrow(() -> new RuntimeException("Гравця не знайдено"));
+        return matchRepository.findByPlayerId(player.getId());
+    }
+
+    @GetMapping("/profile/cs2/{nickname}")
+    public Player getCs2Profile(@PathVariable String nickname) {
+        return playerRepository.findByNicknameIgnoreCaseAndGameType(nickname, GameType.CS2)
+                .orElseThrow(() -> new RuntimeException("Гравця Faceit не знайдено"));
     }
 }
