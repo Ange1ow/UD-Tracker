@@ -374,84 +374,63 @@ public class PlayerController {
         Player player = playerRepository.findByGameTypeAndSteamId(GameType.DOTA2, accountId)
                 .orElseThrow(() -> new RuntimeException("Спочатку синхронізуйте профіль!"));
 
-        JsonNode matches = dotaApiService.getRecentMatches(accountId);
-        if (matches == null || !matches.isArray() || matches.isEmpty()) {
+        // Тепер отримуємо типізований список
+        List<MatchData> matches = dotaApiService.getRecentMatches(accountId);
+
+        if (matches == null || matches.isEmpty()) {
             return "Історія матчів порожня. Переконайтесь, що в налаштуваннях Dota 2 увімкнено 'Expose Public Match Data'.";
         }
-        if (matches != null && matches.isArray() && !matches.isEmpty()) {
-            matchRepository.deleteByPlayerId(player.getId());
 
-            double totalRating = 0;
-            long totalGpm = 0, totalXpm = 0, totalHeroDmg = 0;
-            int count = 0;
+        matchRepository.deleteByPlayerId(player.getId());
 
-            for (JsonNode match : matches) {
-                MatchData md = new MatchData();
-                md.setMatchId(match.path("match_id").asText());
-                md.setMode("Matchmaking");
-                md.setAgent("Hero ID: " + match.path("hero_id").asText());
+        double totalRating = 0;
+        long totalGpm = 0, totalXpm = 0, totalHeroDmg = 0;
+        int count = 0;
 
-                int kills = match.path("kills").asInt();
-                int deaths = match.path("deaths").asInt();
-                int assists = match.path("assists").asInt();
-                int gpm = match.path("gold_per_min").asInt();
-                int xpm = match.path("xp_per_min").asInt();
-                int heroDmg = match.path("hero_damage").asInt();
+        for (MatchData md : matches) {
+            md.setPlayer(player); // Прив'язуємо гравця до матчу
 
-                md.setKills(kills);
-                md.setDeaths(deaths);
-                md.setAssists(assists);
+            // Отримуємо вже розпарсені метрики
+            int kills = md.getKills();
+            int deaths = md.getDeaths();
+            int assists = md.getAssists();
+            int gpm = md.getGpm() != null ? md.getGpm() : 0;
+            int xpm = md.getXpm() != null ? md.getXpm() : 0;
+            int heroDmg = md.getHeroDamage() != null ? md.getHeroDamage() : 0;
 
-                // Тимчасово записуємо XPM та HeroDmg в існуючі поля для рендеру в MatchData
-                md.setGpm(gpm);
-                md.setXpm(xpm);
-                md.setHeroDamage(heroDmg);
+            // Розрахунок імпакту (MOBA Rating)
+            double kda = deaths > 0 ? (kills + (assists * 0.5)) / deaths : (kills + (assists * 0.5));
+            double farmImpact = (gpm + xpm) / 1000.0;
+            double matchRating = (kda * 0.6) + (farmImpact * 0.4);
 
-                // Розрахунок імпакту (MOBA Rating)
-                double kda = deaths > 0 ? (kills + (assists * 0.5)) / deaths : (kills + (assists * 0.5));
-                double farmImpact = (gpm + xpm) / 1000.0;
-                double matchRating = (kda * 0.6) + (farmImpact * 0.4);
+            md.setRating21(matchRating);
+            matchRepository.save(md);
 
-                md.setRating21(matchRating);
-                md.setPlayer(player);
-                matchRepository.save(md);
-
-                totalRating += matchRating;
-                totalGpm += gpm;
-                totalXpm += xpm;
-                totalHeroDmg += heroDmg;
-                count++;
-            }
-
-            // Збереження глобальної MOBA-статистики в профіль гравця
-            if (count > 0) {
-                player.setAverageRating(totalRating / count);
-                player.setAverageGpm((int) (totalGpm / count));
-                player.setAverageXpm((int) (totalXpm / count));
-                player.setAverageHeroDamage((int) (totalHeroDmg / count));
-                player.setLastUpdated(java.time.LocalDateTime.now());
-                playerRepository.save(player);
-            }
-            return "Матчі Dota 2 оновлено!";
+            totalRating += matchRating;
+            totalGpm += gpm;
+            totalXpm += xpm;
+            totalHeroDmg += heroDmg;
+            count++;
         }
-        return "Не вдалося отримати історію матчів Dota 2.";
+
+        // Збереження глобальної MOBA-статистики в профіль гравця
+        if (count > 0) {
+            player.setAverageRating(totalRating / count);
+            player.setAverageGpm((int) (totalGpm / count));
+            player.setAverageXpm((int) (totalXpm / count));
+            player.setAverageHeroDamage((int) (totalHeroDmg / count));
+            player.setLastUpdated(java.time.LocalDateTime.now());
+            playerRepository.save(player);
+        }
+        return "Матчі Dota 2 оновлено!";
     }
 
     @GetMapping("/profile/dota2/{accountId}")
-    public ResponseEntity<Map<String, Object>> getDotaProfile(@PathVariable String accountId) {
+    public ResponseEntity<Player> getDotaProfile(@PathVariable String accountId) {
         Player player = playerRepository.findByGameTypeAndSteamId(GameType.DOTA2, accountId)
                 .orElseThrow(() -> new RuntimeException("Гравця Dota 2 не знайдено"));
 
-        // Ручний мапінг - Jackson ніколи не полізе у зв'язки Hibernate
-        Map<String, Object> response = new HashMap<>();
-        response.put("id", player.getId());
-        response.put("nickname", player.getNickname());
-        response.put("steamId", player.getSteamId());
-        response.put("currentRank", player.getCurrentRank());
-        response.put("playerCard", player.getPlayerCard());
-        response.put("isLinked", player.getAppUser() != null);
-
-        return ResponseEntity.ok(response);
+        return ResponseEntity.ok(player);
     }
 
     @GetMapping("/history/dota2/{accountId}")
@@ -479,25 +458,6 @@ public class PlayerController {
 
         return String.format("Dota 2 акаунт %s успішно прив'язано до email: %s", accountId, currentUser.getEmail());
     }
-    @PostMapping("/link-dota")
-    public ResponseEntity<?> linkDotaAccount(@RequestParam String steamId) {
-        // Отримуємо email з токена авторизації
-        String email = SecurityContextHolder.getContext().getAuthentication().getName();
 
-        AppUser user = appUserRepository.findByEmail(email)
-                .orElseThrow(() -> new RuntimeException("Користувача не знайдено"));
-
-        // Знаходимо або створюємо запис гравця
-        Player player = playerRepository.findByGameTypeAndSteamId(GameType.DOTA2, steamId)
-                .orElse(new Player());
-
-        player.setSteamId(steamId);
-        player.setGameType(GameType.DOTA2);
-        player.setAppUser(user); // Прив'язка до AppUser
-
-        playerRepository.save(player);
-
-        return ResponseEntity.ok("Аккаунт Dota 2 (" + steamId + ") прив'язано до " + email);
-    }
 
 }
