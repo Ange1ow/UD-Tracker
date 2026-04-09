@@ -3,9 +3,12 @@ package com.udtracker.api.model;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import jakarta.persistence.*;
 import lombok.Data;
+import lombok.Getter;
+import lombok.Setter;
 
 @Entity
 @Table(name = "matches")
+@Getter @Setter
 @Data
 public class MatchData {
     @Id
@@ -22,9 +25,15 @@ public class MatchData {
     private String agent;
     private Integer hsPercent;
     private String mode;
+
+    private Integer gpm;
+    private Integer xpm;
+    private Integer heroDamage;
+
     @JsonIgnore
     @ManyToOne
     @JoinColumn(name = "player_id")
     private Player player;
+
 
 }

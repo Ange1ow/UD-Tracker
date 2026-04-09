@@ -25,10 +25,9 @@ public class SecurityConfig {
                 .csrf(AbstractHttpConfigurer::disable)
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS)) // НОВЕ: Не створюємо сесії в пам'яті (REST-стандарт)
                 .authorizeHttpRequests(auth -> auth
-                        .requestMatchers("/api/auth/**").permitAll()
-                        .requestMatchers("/api/v1/players/**").permitAll() // ТИМЧАСОВО відкриті старі API
-                        .requestMatchers("/", "/index.html", "/css/**", "/js/**").permitAll()
-                        .requestMatchers("/v3/api-docs/**", "/swagger-ui/**", "/swagger-ui.html").permitAll()
+                        .requestMatchers("/api/auth/**", "/", "/index.html", "/v3/api-docs/**", "/swagger-ui/**").permitAll()
+                        .requestMatchers("/api/v1/players/link-dota").authenticated()
+                        .requestMatchers("/api/v1/players/**").permitAll()
                         .anyRequest().authenticated()
                 )
                 // Вставляємо наш фільтр перед стандартним

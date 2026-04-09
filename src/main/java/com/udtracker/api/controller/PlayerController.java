@@ -1,22 +1,30 @@
 package com.udtracker.api.controller;
 
-import com.udtracker.api.model.MatchData;
-import com.udtracker.api.model.Player;
-import com.udtracker.api.repository.MatchRepository;
-import com.udtracker.api.repository.PlayerRepository;
-import com.udtracker.api.service.ExternalApiService;
-import com.udtracker.api.service.RatingService;
-import com.fasterxml.jackson.databind.JsonNode;
-import lombok.RequiredArgsConstructor;
-import org.springframework.web.bind.annotation.*;
-import org.springframework.transaction.annotation.Transactional;
-import java.util.List;
-import java.security.Principal;
-import io.swagger.v3.oas.annotations.security.SecurityRequirement;
-import com.udtracker.api.repository.AppUserRepository;
 import com.udtracker.api.model.AppUser;
 import com.udtracker.api.model.GameType;
+import com.udtracker.api.model.MatchData;
+import com.udtracker.api.model.Player;
+import com.udtracker.api.repository.AppUserRepository;
+import com.udtracker.api.repository.MatchRepository;
+import com.udtracker.api.repository.PlayerRepository;
+import com.udtracker.api.service.DotaApiService;
+import com.udtracker.api.service.ExternalApiService;
 import com.udtracker.api.service.FaceitApiService;
+import com.udtracker.api.service.RatingService;
+import com.fasterxml.jackson.databind.JsonNode;
+import io.swagger.v3.oas.annotations.security.SecurityRequirement;
+import lombok.RequiredArgsConstructor;
+import org.springframework.http.ResponseEntity;
+import org.springframework.security.core.context.SecurityContextHolder; // ДОДАНО
+import org.springframework.transaction.annotation.Transactional;
+import org.springframework.web.bind.annotation.*;
+import org.springframework.security.core.context.SecurityContextHolder; // Обов'язково для JWT
+import org.springframework.http.ResponseEntity;
+
+import java.security.Principal;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
 
 @RestController
 @RequestMapping("/api/v1/players")
@@ -29,6 +37,9 @@ public class PlayerController {
     private final MatchRepository matchRepository;
     private final AppUserRepository appUserRepository;
     private final FaceitApiService faceitApiService;
+    private final DotaApiService dotaApiService;
+
+
 
     // ------------------- VALORANT ENDPOINTS -------------------
 
@@ -198,7 +209,7 @@ public class PlayerController {
             return "Помилка: Ви не авторизовані!";
         }
 
-        AppUser currentUser = appUserRepository.findByEmail(principal.getName())
+        AppUser currentUser = appUserRepository .findByEmail(principal.getName())
                 .orElseThrow(() -> new RuntimeException("Користувача не знайдено"));
 
         Player player = playerRepository.findByRiotIdAndTagLine(name, tag)
@@ -328,4 +339,165 @@ public class PlayerController {
 
         return String.format("Faceit акаунт %s успішно прив'язано до email: %s", nickname, currentUser.getEmail());
     }
+    // ------------------- DOTA 2 ENDPOINTS -------------------
+
+    @GetMapping("/sync/dota2/{accountId}")
+    public String syncDotaPlayer(@PathVariable String accountId) {
+        JsonNode profileData = dotaApiService.getPlayerProfile(accountId);
+        if (profileData == null || !profileData.has("profile")) {
+            throw new RuntimeException("Гравця Dota 2 не знайдено (перевірте ID)");
+        }
+
+        JsonNode profileNode = profileData.path("profile");
+        String nickname = profileNode.path("personaname").asText();
+        String avatar = profileNode.path("avatarfull").asText();
+        String rankTier = profileData.path("rank_tier").asText("Uncalibrated");
+
+        Player player = playerRepository.findByGameTypeAndSteamId(GameType.DOTA2, accountId)
+                .orElse(new Player());
+
+        player.setGameType(GameType.DOTA2);
+        player.setSteamId(accountId); // Використовуємо steamId для збереження 32-bit Account ID
+        player.setNickname(nickname);
+        player.setPlayerCard(avatar);
+        player.setCurrentRank(rankTier.equals("null") ? "Uncalibrated" : "Tier " + rankTier);
+
+        player.setLastUpdated(java.time.LocalDateTime.now());
+        playerRepository.save(player);
+
+        return "Синхронізовано Dota 2: " + nickname;
+    }
+
+    @Transactional
+    @GetMapping("/matches/dota2/{accountId}")
+    public String syncDotaMatches(@PathVariable String accountId) {
+        Player player = playerRepository.findByGameTypeAndSteamId(GameType.DOTA2, accountId)
+                .orElseThrow(() -> new RuntimeException("Спочатку синхронізуйте профіль!"));
+
+        JsonNode matches = dotaApiService.getRecentMatches(accountId);
+        if (matches == null || !matches.isArray() || matches.isEmpty()) {
+            return "Історія матчів порожня. Переконайтесь, що в налаштуваннях Dota 2 увімкнено 'Expose Public Match Data'.";
+        }
+        if (matches != null && matches.isArray() && !matches.isEmpty()) {
+            matchRepository.deleteByPlayerId(player.getId());
+
+            double totalRating = 0;
+            long totalGpm = 0, totalXpm = 0, totalHeroDmg = 0;
+            int count = 0;
+
+            for (JsonNode match : matches) {
+                MatchData md = new MatchData();
+                md.setMatchId(match.path("match_id").asText());
+                md.setMode("Matchmaking");
+                md.setAgent("Hero ID: " + match.path("hero_id").asText());
+
+                int kills = match.path("kills").asInt();
+                int deaths = match.path("deaths").asInt();
+                int assists = match.path("assists").asInt();
+                int gpm = match.path("gold_per_min").asInt();
+                int xpm = match.path("xp_per_min").asInt();
+                int heroDmg = match.path("hero_damage").asInt();
+
+                md.setKills(kills);
+                md.setDeaths(deaths);
+                md.setAssists(assists);
+
+                // Тимчасово записуємо XPM та HeroDmg в існуючі поля для рендеру в MatchData
+                md.setGpm(gpm);
+                md.setXpm(xpm);
+                md.setHeroDamage(heroDmg);
+
+                // Розрахунок імпакту (MOBA Rating)
+                double kda = deaths > 0 ? (kills + (assists * 0.5)) / deaths : (kills + (assists * 0.5));
+                double farmImpact = (gpm + xpm) / 1000.0;
+                double matchRating = (kda * 0.6) + (farmImpact * 0.4);
+
+                md.setRating21(matchRating);
+                md.setPlayer(player);
+                matchRepository.save(md);
+
+                totalRating += matchRating;
+                totalGpm += gpm;
+                totalXpm += xpm;
+                totalHeroDmg += heroDmg;
+                count++;
+            }
+
+            // Збереження глобальної MOBA-статистики в профіль гравця
+            if (count > 0) {
+                player.setAverageRating(totalRating / count);
+                player.setAverageGpm((int) (totalGpm / count));
+                player.setAverageXpm((int) (totalXpm / count));
+                player.setAverageHeroDamage((int) (totalHeroDmg / count));
+                player.setLastUpdated(java.time.LocalDateTime.now());
+                playerRepository.save(player);
+            }
+            return "Матчі Dota 2 оновлено!";
+        }
+        return "Не вдалося отримати історію матчів Dota 2.";
+    }
+
+    @GetMapping("/profile/dota2/{accountId}")
+    public ResponseEntity<Map<String, Object>> getDotaProfile(@PathVariable String accountId) {
+        Player player = playerRepository.findByGameTypeAndSteamId(GameType.DOTA2, accountId)
+                .orElseThrow(() -> new RuntimeException("Гравця Dota 2 не знайдено"));
+
+        // Ручний мапінг - Jackson ніколи не полізе у зв'язки Hibernate
+        Map<String, Object> response = new HashMap<>();
+        response.put("id", player.getId());
+        response.put("nickname", player.getNickname());
+        response.put("steamId", player.getSteamId());
+        response.put("currentRank", player.getCurrentRank());
+        response.put("playerCard", player.getPlayerCard());
+        response.put("isLinked", player.getAppUser() != null);
+
+        return ResponseEntity.ok(response);
+    }
+
+    @GetMapping("/history/dota2/{accountId}")
+    public List<MatchData> getDotaHistory(@PathVariable String accountId) {
+        Player player = playerRepository.findByGameTypeAndSteamId(GameType.DOTA2, accountId)
+                .orElseThrow(() -> new RuntimeException("Гравця не знайдено"));
+        return matchRepository.findByPlayerId(player.getId());
+    }
+
+    @PostMapping("/link/dota2/{accountId}")
+    @SecurityRequirement(name = "Bearer Authentication")
+    public String linkDotaAccount(@PathVariable String accountId, Principal principal) {
+        if (principal == null) {
+            return "Помилка: Ви не авторизовані!";
+        }
+
+        AppUser currentUser = appUserRepository.findByEmail(principal.getName())
+                .orElseThrow(() -> new RuntimeException("Користувача не знайдено"));
+
+        Player player = playerRepository.findByGameTypeAndSteamId(GameType.DOTA2, accountId)
+                .orElseThrow(() -> new RuntimeException("Спочатку знайдіть профіль через пошук!"));
+
+        player.setAppUser(currentUser);
+        playerRepository.save(player);
+
+        return String.format("Dota 2 акаунт %s успішно прив'язано до email: %s", accountId, currentUser.getEmail());
+    }
+    @PostMapping("/link-dota")
+    public ResponseEntity<?> linkDotaAccount(@RequestParam String steamId) {
+        // Отримуємо email з токена авторизації
+        String email = SecurityContextHolder.getContext().getAuthentication().getName();
+
+        AppUser user = appUserRepository.findByEmail(email)
+                .orElseThrow(() -> new RuntimeException("Користувача не знайдено"));
+
+        // Знаходимо або створюємо запис гравця
+        Player player = playerRepository.findByGameTypeAndSteamId(GameType.DOTA2, steamId)
+                .orElse(new Player());
+
+        player.setSteamId(steamId);
+        player.setGameType(GameType.DOTA2);
+        player.setAppUser(user); // Прив'язка до AppUser
+
+        playerRepository.save(player);
+
+        return ResponseEntity.ok("Аккаунт Dota 2 (" + steamId + ") прив'язано до " + email);
+    }
+
 }

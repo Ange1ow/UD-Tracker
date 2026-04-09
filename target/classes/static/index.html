@@ -103,11 +103,11 @@
     <div class="features">
         <div class="feature-card">
             <h3>Мультиігровий трекінг</h3>
-            <p>Наразі підтримується Valorant та базова статистика CS2. Faceit вже в активній розробці. Всі твої акаунти під одним дахом.</p>
+            <p>Підтримується Valorant, CS2 (Faceit) та Dota 2. Всі твої акаунти під одним дахом.</p>
         </div>
         <div class="feature-card">
             <h3>Глибока аналітика</h3>
-            <p>Розрахунок унікального Rating 2.1, аналіз K/D, ADR та успішності гри на окремих агентах чи мапах.</p>
+            <p>Розрахунок унікального Rating 2.1, аналіз K/D, GPM, XPM та успішності гри.</p>
         </div>
         <div class="feature-card">
             <h3>Global Rating</h3>
@@ -120,8 +120,8 @@
     <div class="search-bar">
         <select class="game-select" id="game-selector">
             <option value="valorant">Valorant</option>
-            <option value="cs2">CS2 (Steam)</option>
-            <option value="dota2" disabled>Dota 2 (В розробці)</option>
+            <option value="cs2">CS2 (Faceit)</option>
+            <option value="dota2">Dota 2</option>
         </select>
         <input type="text" id="name" placeholder="Riot ID (напр. Ange1uw)">
         <input type="text" id="tag" placeholder="Tagline (напр. naxyi)">
@@ -152,7 +152,7 @@
             <div class="tabs">
                 <button class="tab-btn" id="btn-profile" onclick="switchTrackerTab('profile')">Профіль</button>
                 <button class="tab-btn active" id="btn-history" onclick="switchTrackerTab('history')">Історія матчів</button>
-                <button class="tab-btn" id="btn-agents" onclick="switchTrackerTab('agents')">Агенти</button>
+                <button class="tab-btn" id="btn-agents" onclick="switchTrackerTab('agents')">Агенти / Герої</button>
                 <button class="tab-btn" id="btn-leaderboard" onclick="switchTrackerTab('leaderboard'); loadLeaderboard();">Топ гравців</button>
             </div>
 
@@ -164,15 +164,15 @@
                             <div id="avg-rating" style="font-size: 24px; font-weight: bold; color: #ff4655;">0.00</div>
                         </div>
                         <div style="background: #28313e; padding: 20px; border-radius: 6px; width: 23%; text-align: center;">
-                            <div style="color: #8a96a3; font-size: 13px;">Середній K/D</div>
+                            <div id="lbl-stat2" style="color: #8a96a3; font-size: 13px;">Середній K/D</div>
                             <div id="avg-kd" style="font-size: 24px; font-weight: bold;">0.00</div>
                         </div>
                         <div style="background: #28313e; padding: 20px; border-radius: 6px; width: 23%; text-align: center;">
-                            <div style="color: #8a96a3; font-size: 13px;">HS %</div>
+                            <div id="lbl-stat3" style="color: #8a96a3; font-size: 13px;">HS %</div>
                             <div id="avg-hs" style="font-size: 24px; font-weight: bold;">0%</div>
                         </div>
                         <div style="background: #28313e; padding: 20px; border-radius: 6px; width: 23%; text-align: center;">
-                            <div style="color: #8a96a3; font-size: 13px;">ADR</div>
+                            <div id="lbl-stat4" style="color: #8a96a3; font-size: 13px;">ADR</div>
                             <div id="avg-adr" style="font-size: 24px; font-weight: bold;">0</div>
                         </div>
                     </div>
@@ -181,7 +181,7 @@
                 <div id="tab-history"><div id="matches-list"></div></div>
                 <div id="tab-agents" style="display: none;">
                     <table style="width: 100%; border-collapse: collapse; text-align: center;">
-                        <thead><tr style="color: #8a96a3; border-bottom: 2px solid #28313e;"><th style="text-align: left; padding: 10px;">Агент</th><th>Матчі</th><th>K/D</th><th>HS %</th><th>ADR</th></tr></thead>
+                        <thead><tr style="color: #8a96a3; border-bottom: 2px solid #28313e;"><th style="text-align: left; padding: 10px;">Агент/Герой</th><th>Матчі</th><th>K/D</th><th>HS %</th><th>ADR</th></tr></thead>
                         <tbody id="agents-body"></tbody>
                     </table>
                 </div>
@@ -210,8 +210,7 @@
         </div>
 
         <h3 style="color: #8a96a3; margin-bottom: 15px; border-bottom: 1px solid #28313e; padding-bottom: 10px;">Підключені ігрові акаунти</h3>
-        <div id="linked-accounts-list">
-        </div>
+        <div id="linked-accounts-list"></div>
     </div>
 </section>
 
@@ -222,7 +221,6 @@
         const token = localStorage.getItem('jwt_token');
         let autoLoaded = false;
 
-        // Динамічна зміна полів вводу залежно від обраної гри
         document.getElementById('game-selector').addEventListener('change', function() {
             const game = this.value;
             const tagInput = document.getElementById('tag');
@@ -231,6 +229,9 @@
             if (game === 'cs2') {
                 tagInput.style.display = 'none';
                 nameInput.placeholder = 'Точний нік на Faceit';
+            } else if (game === 'dota2') {
+                tagInput.style.display = 'none';
+                nameInput.placeholder = 'Dota Account ID (32-bit)';
             } else {
                 tagInput.style.display = 'inline-block';
                 nameInput.placeholder = 'Riot ID (напр. Ange1uw)';
@@ -243,9 +244,12 @@
                 if (res.ok) {
                     const data = await res.json();
                     if (data.accounts && data.accounts.length > 0) {
-                        document.getElementById('game-selector').value = 'valorant';
-                        document.getElementById('name').value = data.accounts[0].riotId;
-                        document.getElementById('tag').value = data.accounts[0].tagLine;
+                        const acc = data.accounts[0];
+                        let gameType = (acc.gameType || 'VALORANT').toLowerCase();
+                        document.getElementById('game-selector').value = gameType;
+                        document.getElementById('game-selector').dispatchEvent(new Event('change'));
+                        document.getElementById('name').value = gameType === 'valorant' ? acc.riotId : (acc.nickname || acc.steamId);
+                        if (gameType === 'valorant') document.getElementById('tag').value = acc.tagLine;
                         switchMainView('search');
                         analyzePlayer();
                         autoLoaded = true;
@@ -262,18 +266,14 @@
         }
     };
 
-    /* VIEWS ROUTER */
     function switchMainView(viewName) {
         document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
         document.getElementById(`view-${viewName}`).classList.add('active');
-
         document.querySelectorAll('.nav-btn').forEach(el => el.classList.remove('active'));
         document.getElementById(`nav-${viewName}`).classList.add('active');
-
         if (viewName === 'profile') loadMyProfile();
     }
 
-    /* TRACKER TABS */
     function switchTrackerTab(tab) {
         ['profile', 'history', 'agents', 'leaderboard'].forEach(t => {
             document.getElementById(`tab-${t}`).style.display = t === tab ? 'block' : 'none';
@@ -281,11 +281,8 @@
         });
     }
 
-
-    /* TRACKER LOGIC */
     async function analyzePlayer() {
         const game = document.getElementById('game-selector').value;
-        const rawName = document.getElementById('name').value;
         const name = document.getElementById('name').value.trim();
         const tag = document.getElementById('tag').value.trim();
         const btn = document.getElementById('search-btn');
@@ -298,11 +295,8 @@
         try {
             if (game === 'valorant') {
                 if (!tag) throw new Error("Введіть тег!");
-
-                // Ланцюжок синхронізації Valorant
                 await fetch(`/api/v1/players/sync/${name}/${tag}`);
                 await fetch(`/api/v1/players/matches/${name}/${tag}`);
-
                 const [profile, matches, verdict] = await Promise.all([
                     fetch(`/api/v1/players/profile/${name}/${tag}`).then(r => r.json()),
                     fetch(`/api/v1/players/history/${name}/${tag}`).then(r => r.json()),
@@ -311,20 +305,32 @@
                 renderValorantUI(name, tag, profile, matches, verdict);
 
             } else if (game === 'cs2') {
-                // Ланцюжок синхронізації Faceit/CS2
-                await fetch(`/api/v1/players/sync/cs2/${name}`);
-                await fetch(`/api/v1/players/matches/cs2/${name}`);
-
+                const syncRes = await fetch(`/api/v1/players/sync/cs2/${name}`);
+                if (!syncRes.ok) throw new Error("Помилка Faceit API: Гравець не знайдений.");
+                const matchRes = await fetch(`/api/v1/players/matches/cs2/${name}`);
+                if (!matchRes.ok) throw new Error("Помилка завантаження матчів CS2!");
                 const [profile, matches] = await Promise.all([
                     fetch(`/api/v1/players/profile/cs2/${name}`).then(r => r.json()),
                     fetch(`/api/v1/players/history/cs2/${name}`).then(r => r.json())
                 ]);
                 renderCs2UI(profile, matches);
+
+            } else if (game === 'dota2') {
+                const syncRes = await fetch(`/api/v1/players/sync/dota2/${name}`);
+                if (!syncRes.ok) throw new Error("Помилка: Акаунт Dota 2 не знайдено!");
+                const matchRes = await fetch(`/api/v1/players/matches/dota2/${name}`);
+                if (!matchRes.ok) throw new Error("Помилка завантаження матчів Dota 2!");
+                const [profile, matches] = await Promise.all([
+                    fetch(`/api/v1/players/profile/dota2/${name}`).then(r => r.json()),
+                    fetch(`/api/v1/players/history/dota2/${name}`).then(r => r.json())
+                ]);
+                renderDotaUI(profile, matches);
             }
 
             document.getElementById('tracker-main').style.display = 'flex';
+            switchTrackerTab('history');
         } catch (err) {
-            alert(err.message || "Помилка синхронізації");
+            alert(err.message || "Помилка зв'язку з бекендом!");
             console.error(err);
         } finally {
             toggleLoader(false);
@@ -332,10 +338,8 @@
         }
     }
 
-    /* RENDERING ENGINES */
     function renderValorantUI(name, tag, profile, matches, verdict) {
         updateSidebar(name, '#' + tag, profile.currentRank, profile.accountLevel, profile.playerCard);
-
         document.getElementById('btn-link').style.display = (localStorage.getItem('jwt_token') && !profile.isLinked) ? 'block' : 'none';
 
         let tKills = 0, tDeaths = 0, tADR = 0, tHS = 0;
@@ -345,25 +349,48 @@
         }).join('');
 
         document.getElementById('matches-list').innerHTML = html;
-        updateStatsGrid(profile.averageRating, (tKills / (tDeaths || 1)), (tHS / (matches.length || 1)), (tADR / (matches.length || 1)));
+        updateStatsGrid('valorant', profile.averageRating, (tKills / (tDeaths || 1)), (tHS / (matches.length || 1)), (tADR / (matches.length || 1)));
         document.getElementById('p-verdict').innerText = verdict;
         document.getElementById('btn-agents').style.display = 'inline-block';
     }
 
     function renderCs2UI(profile, matches) {
         updateSidebar(profile.nickname, "Faceit", profile.currentRank, profile.accountLevel, profile.playerCard);
-
         document.getElementById('btn-link').style.display = (localStorage.getItem('jwt_token') && !profile.isLinked) ? 'block' : 'none';
 
         let html = matches.map(m => renderMatchRow("CS2", `Faceit • ${m.map}`, m, m.rating21)).join('');
 
         document.getElementById('matches-list').innerHTML = html;
-        updateStatsGrid(profile.averageRating, profile.averageKd, profile.averageHs, profile.averageAdr);
+        updateStatsGrid('cs2', profile.averageRating, profile.averageKd, profile.averageHs, profile.averageAdr);
         document.getElementById('p-verdict').innerText = "";
         document.getElementById('btn-agents').style.display = 'none';
     }
 
-    /* UI HELPERS */
+    function renderDotaUI(profile, matches) {
+        updateSidebar(profile.nickname || "Dota Player", "Steam 32-bit", profile.currentRank || "Uncalibrated", profile.accountLevel || 0, profile.playerCard);
+        document.getElementById('btn-link').style.display = (localStorage.getItem('jwt_token') && !profile.isLinked) ? 'block' : 'none';
+
+        let html = matches.map(m => {
+            let isGood = m.rating21 >= 1.0;
+            return `
+            <div class="match-row ${isGood ? 'good' : 'bad'}">
+                <div class="m-block agent">
+                    <span class="m-val">${m.agent || 'Герой'}</span>
+                    <span class="m-lbl">${m.mode || 'All Pick'}</span>
+                </div>
+                <div class="m-block"><span class="m-val">${m.kills}/${m.deaths}/${m.assists}</span><span class="m-lbl">K / D / A</span></div>
+                <div class="m-block"><span class="m-val">${m.hsPercent || 0}</span><span class="m-lbl">XPM</span></div>
+                <div class="m-block"><span class="m-val" style="color:${isGood ? '#22c55e' : '#ef4444'}">${(m.rating21 || 0).toFixed(2)}</span><span class="m-lbl">Impact</span></div>
+            </div>`;
+        }).join('');
+
+        document.getElementById('matches-list').innerHTML = html;
+        updateStatsGrid('dota2', profile.averageRating, profile.averageGpm, profile.averageXpm, profile.averageHeroDamage);
+
+        document.getElementById('p-verdict').innerText = "";
+        document.getElementById('btn-agents').style.display = 'none';
+    }
+
     function renderMatchRow(title, subtitle, stats, rating) {
         const isGood = rating >= 1.0;
         return `
@@ -371,7 +398,7 @@
             <div class="m-block agent"><span class="m-val">${title}</span><span class="m-lbl">${subtitle}</span></div>
             <div class="m-block"><span class="m-val">${stats.kills}/${stats.deaths}/${stats.assists}</span><span class="m-lbl">KDA</span></div>
             <div class="m-block"><span class="m-val">${stats.hsPercent}%</span><span class="m-lbl">HS%</span></div>
-            <div class="m-block"><span class="m-val" style="color:${isGood ? '#22c55e' : '#ef4444'}">${rating.toFixed(2)}</span><span class="m-lbl">Rating</span></div>
+            <div class="m-block"><span class="m-val" style="color:${isGood ? '#22c55e' : '#ef4444'}">${(rating || 0).toFixed(2)}</span><span class="m-lbl">Rating</span></div>
         </div>`;
     }
 
@@ -380,74 +407,37 @@
         document.getElementById('p-tag').innerText = tag;
         document.getElementById('p-rank').innerText = rank || "Unranked";
         document.getElementById('p-level').innerText = "Рівень: " + (level || 0);
+        document.getElementById('avatar-letter').innerText = name ? name.charAt(0).toUpperCase() : '?';
         const bg = document.getElementById('player-bg');
         bg.style.backgroundImage = card ? `url(${card})` : 'none';
+        bg.style.backgroundColor = card ? 'transparent' : '#28313e';
     }
 
-    function updateStatsGrid(rating, kd, hs, adr) {
+    function updateStatsGrid(game, rating, stat2, stat3, stat4) {
         document.getElementById('avg-rating').innerText = (rating || 0).toFixed(2);
-        document.getElementById('avg-kd').innerText = (kd || 0).toFixed(2);
-        document.getElementById('avg-hs').innerText = Math.round(hs || 0) + '%';
-        document.getElementById('avg-adr').innerText = Math.round(adr || 0);
+
+        if (game === 'dota2') {
+            document.getElementById('lbl-stat2').innerText = 'GPM';
+            document.getElementById('lbl-stat3').innerText = 'XPM';
+            document.getElementById('lbl-stat4').innerText = 'Hero Dmg';
+
+            document.getElementById('avg-kd').innerText = Math.round(stat2 || 0);
+            document.getElementById('avg-hs').innerText = Math.round(stat3 || 0);
+            document.getElementById('avg-adr').innerText = Math.round(stat4 || 0);
+        } else {
+            document.getElementById('lbl-stat2').innerText = 'Середній K/D';
+            document.getElementById('lbl-stat3').innerText = 'HS %';
+            document.getElementById('lbl-stat4').innerText = 'ADR';
+
+            document.getElementById('avg-kd').innerText = (stat2 || 0).toFixed(2);
+            document.getElementById('avg-hs').innerText = Math.round(stat3 || 0) + '%';
+            document.getElementById('avg-adr').innerText = Math.round(stat4 || 0);
+        }
     }
 
     function toggleLoader(show) {
         document.getElementById('loader').style.display = show ? 'block' : 'none';
         if(show) document.getElementById('tracker-main').style.display = 'none';
-    }
-    /* TRACKER LOGIC */
-    async function analyzePlayer() {
-        const game = document.getElementById('game-selector').value;
-        const name = document.getElementById('name').value.trim();
-        const tag = document.getElementById('tag').value.trim();
-        const btn = document.getElementById('search-btn');
-
-        if (!name) { alert("Введіть ідентифікатор!"); return; }
-
-        // УВАГА: Парсинг Steam лінків видалено. Faceit API вимагає точний Faceit-нікнейм.
-
-        document.getElementById('tracker-main').style.display = 'none';
-        document.getElementById('loader').style.display = 'block';
-        btn.disabled = true;
-
-        try {
-            if (game === 'valorant') {
-                if (!tag) { alert("Введіть тег!"); throw new Error("Відсутній тег"); }
-
-                await fetch(`/api/v1/players/sync/${name}/${tag}`);
-                await fetch(`/api/v1/players/matches/${name}/${tag}`);
-
-                const [profile, matches, verdictText] = await Promise.all([
-                    fetch(`/api/v1/players/profile/${name}/${tag}`).then(r => r.json()),
-                    fetch(`/api/v1/players/history/${name}/${tag}`).then(r => r.json()),
-                    fetch(`/api/v1/players/stats/${name}/${tag}`).then(r => r.text())
-                ]);
-
-                renderValorantUI(name, tag, profile, matches, verdictText);
-
-            } else if (game === 'cs2') {
-                await fetch(`/api/v1/players/sync/cs2/${name}`);
-                await fetch(`/api/v1/players/matches/cs2/${name}`);
-
-                const [profile, matches] = await Promise.all([
-                    fetch(`/api/v1/players/profile/cs2/${name}`).then(r => {
-                        if (!r.ok) throw new Error("Faceit профіль не знайдено");
-                        return r.json();
-                    }),
-                    fetch(`/api/v1/players/history/cs2/${name}`).then(r => r.json())
-                ]);
-
-                renderCs2UI(profile, matches);
-            }
-
-            document.getElementById('tracker-main').style.display = 'flex';
-        } catch (err) {
-            alert(err.message || "Помилка зв'язку з бекендом або гравця не знайдено!");
-            console.error(err);
-        } finally {
-            document.getElementById('loader').style.display = 'none';
-            btn.disabled = false;
-        }
     }
 
     async function loadLeaderboard() {
@@ -456,9 +446,9 @@
             const players = await res.json();
             let html = '';
             players.forEach((p, i) => {
-                let identifier = p.gameType === 'CS2' ? p.steamId : p.riotId;
-                let display = p.gameType === 'CS2' ? p.nickname : `${p.riotId}#${p.tagLine}`;
-                let selectGame = p.gameType === 'CS2' ? 'cs2' : 'valorant';
+                let identifier = p.gameType === 'CS2' ? p.steamId : (p.gameType === 'DOTA2' ? p.steamId : p.riotId);
+                let display = p.gameType === 'CS2' ? p.nickname : (p.gameType === 'DOTA2' ? p.nickname : `${p.riotId}#${p.tagLine}`);
+                let selectGame = p.gameType === 'CS2' ? 'cs2' : (p.gameType === 'DOTA2' ? 'dota2' : 'valorant');
 
                 html += `<tr style="border-bottom: 1px solid #28313e;"><td style="padding:15px; font-weight:bold;">${i + 1}</td><td style="text-align:left; cursor:pointer;" onclick="document.getElementById('game-selector').value='${selectGame}'; document.getElementById('game-selector').dispatchEvent(new Event('change')); document.getElementById('name').value='${identifier}'; if('${selectGame}'==='valorant') document.getElementById('tag').value='${p.tagLine}'; analyzePlayer();">${display} <span style="font-size:10px; color:#8a96a3;">(${p.gameType || 'VALORANT'})</span></td><td>${p.currentRank || 'Unranked'}</td><td>${p.averageRating ? p.averageRating.toFixed(2) : '0.00'}</td></tr>`;
             });
@@ -466,7 +456,6 @@
         } catch (err) {}
     }
 
-    /* AUTH & PROFILE LOGIC */
     function checkAuth() {
         const token = localStorage.getItem('jwt_token');
         document.getElementById('auth-panel').style.display = token ? 'none' : 'block';
@@ -495,16 +484,16 @@
         const name = document.getElementById('p-name').innerText;
         const tagText = document.getElementById('p-tag').innerText;
 
-        // Визначаємо правильний URL залежно від гри
-        const url = tagText === "Faceit"
-            ? `/api/v1/players/link/cs2/${name}`
-            : `/api/v1/players/link/${name}/${tagText.replace('#', '')}`;
+        let url = "";
+        if (tagText === "Faceit") {
+            url = `/api/v1/players/link/cs2/${name}`;
+        } else if (tagText === "Steam 32-bit") {
+            url = `/api/v1/players/link/dota2/${name}`; // Маршрут для доти
+        } else {
+            url = `/api/v1/players/link/${name}/${tagText.replace('#', '')}`;
+        }
 
-        const res = await fetch(url, {
-            method: 'POST',
-            headers: { 'Authorization': `Bearer ${localStorage.getItem('jwt_token')}` }
-        });
-
+        const res = await fetch(url, { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('jwt_token')}` } });
         if (res.ok) document.getElementById('btn-link').style.display = 'none';
         alert(await res.text());
     }
@@ -522,8 +511,9 @@
                 let html = data.accounts.length === 0 ? '<p style="color:#8a96a3;">Немає прив\'язаних акаунтів.</p>' : '';
                 data.accounts.forEach(acc => {
                     let gameType = acc.gameType || 'VALORANT';
-                    let displayId = gameType === 'CS2' ? acc.nickname : `${acc.riotId}#${acc.tagLine}`;
-                    let searchId = gameType === 'CS2' ? acc.nickname : acc.riotId;
+                    let displayId = (gameType === 'CS2' || gameType === 'DOTA2') ? acc.nickname : `${acc.riotId}#${acc.tagLine}`;
+                    let searchId = (gameType === 'CS2' || gameType === 'DOTA2') ? acc.steamId : acc.riotId;
+
                     html += `
                     <div class="game-account-card">
                         <div>
@@ -534,7 +524,7 @@
                         <div style="text-align: right;">
                             <div style="color: #8a96a3; font-size: 12px;">Rating 2.1</div>
                             <div style="font-size: 20px; font-weight: bold; color: #ff4655;">${acc.averageRating ? acc.averageRating.toFixed(2) : '0.00'}</div>
-                            <button onclick="unlinkAccount('${acc.riotId}', '${acc.tagLine}')" style="background:none; border:none; color:#ef4444; font-size:12px; cursor:pointer; margin-top:5px; text-decoration:underline;">Відв'язати</button>
+                            <button onclick="unlinkAccount('${searchId}', '${acc.tagLine}')" style="background:none; border:none; color:#ef4444; font-size:12px; cursor:pointer; margin-top:5px; text-decoration:underline;">Відв'язати</button>
                         </div>
                     </div>`;
                 });
@@ -543,9 +533,10 @@
         } catch (err) {}
     }
 
-    async function unlinkAccount(riotId, tagLine) {
+    async function unlinkAccount(searchId, tagLine) {
         if (!confirm(`Відв'язати цей акаунт?`)) return;
-        const res = await fetch(`/api/user/link/${riotId}/${tagLine}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${localStorage.getItem('jwt_token')}` } });
+        // Примітка: Твій бекенд наразі підтримує тільки відв'язку Valorant за riotId/tagLine. Для Доти треба буде додати ендпоінт.
+        const res = await fetch(`/api/user/link/${searchId}/${tagLine}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${localStorage.getItem('jwt_token')}` } });
         if (res.ok) loadMyProfile();
     }
 </script>

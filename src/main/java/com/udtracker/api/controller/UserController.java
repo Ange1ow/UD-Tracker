@@ -10,6 +10,7 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
+import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.security.Principal;
 import java.util.List;
@@ -67,5 +68,26 @@ public class    UserController {
         playerRepository.save(player);
 
         return ResponseEntity.ok("Акаунт " + riotId + "#" + tagLine + " успішно відв'язано");
+    }
+    @GetMapping("/my-profile")
+    public ResponseEntity<UserProfileDto> getMyProfile(Principal principal) {
+        if (principal == null) return ResponseEntity.status(401).build();
+
+        AppUser user = appUserRepository.findByEmail(principal.getName())
+                .orElseThrow(() -> new RuntimeException("Користувача не знайдено"));
+
+        UserProfileDto dto = new UserProfileDto(); // Працює завдяки @NoArgsConstructor
+        dto.setEmail(user.getEmail());
+        dto.setGlobalRating(user.getGlobalRating());
+
+        dto.setLinkedAccounts(user.getGameAccounts().stream()
+                .map(p -> new LinkedAccountDto(
+                        p.getGameType().name(),
+                        p.getNickname(),
+                        p.getCurrentRank(),
+                        p.getAverageRating())) // Працює завдяки ручному конструктору
+                .toList());
+
+        return ResponseEntity.ok(dto);
     }
 }

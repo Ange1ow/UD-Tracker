@@ -17,6 +17,7 @@ D:\PotuzhnoUnity\UD-Tracker\src\main\java\com\udtracker\api\repository\PlayerRep
 D:\PotuzhnoUnity\UD-Tracker\src\main\java\com\udtracker\api\service\AuthService.java
 D:\PotuzhnoUnity\UD-Tracker\src\main\java\com\udtracker\api\service\BackgroundSyncService.java
 D:\PotuzhnoUnity\UD-Tracker\src\main\java\com\udtracker\api\service\CustomUserDetailsService.java
+D:\PotuzhnoUnity\UD-Tracker\src\main\java\com\udtracker\api\service\DotaApiService.java
 D:\PotuzhnoUnity\UD-Tracker\src\main\java\com\udtracker\api\service\ExternalApiService.java
 D:\PotuzhnoUnity\UD-Tracker\src\main\java\com\udtracker\api\service\FaceitApiService.java
 D:\PotuzhnoUnity\UD-Tracker\src\main\java\com\udtracker\api\service\JwtService.java

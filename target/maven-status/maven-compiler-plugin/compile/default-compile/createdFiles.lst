@@ -17,6 +17,7 @@ com\udtracker\api\service\SteamApiService.class
 com\udtracker\api\model\AppUser.class
 com\udtracker\api\UdTrackerApplication.class
 com\udtracker\api\service\AuthService.class
+com\udtracker\api\service\DotaApiService.class
 com\udtracker\api\service\JwtService.class
 com\udtracker\api\repository\AppUserRepository.class
 com\udtracker\api\config\OpenApiConfig.class
