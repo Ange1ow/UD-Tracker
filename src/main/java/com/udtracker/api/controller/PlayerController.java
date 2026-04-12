@@ -350,23 +350,26 @@ public class PlayerController {
     @GetMapping("/sync/dota2/{accountId}")
     public String syncDotaPlayer(@PathVariable String accountId) {
         JsonNode profileData = dotaApiService.getPlayerProfile(accountId);
-
         if (profileData == null || !profileData.has("profile")) {
-            throw new RuntimeException("Гравця Dota 2 не знайдено АБО статистика прихована. Увімкніть 'Expose Public Match Data' у налаштуваннях гри.");
+            throw new RuntimeException("Гравця Dota 2 не знайдено (перевірте ID)");
         }
+
         JsonNode profileNode = profileData.path("profile");
         String nickname = profileNode.path("personaname").asText();
         String avatar = profileNode.path("avatarfull").asText();
-        String rankTier = profileData.path("rank_tier").asText("Uncalibrated");
+
+        // ---> ВИПРАВЛЕНО: Використовуємо новий конвертер <---
+        String rankTierStr = profileData.path("rank_tier").asText("null");
+        String readableRank = convertDotaRank(rankTierStr);
 
         Player player = playerRepository.findByGameTypeAndSteamId(GameType.DOTA2, accountId)
                 .orElse(new Player());
 
         player.setGameType(GameType.DOTA2);
-        player.setSteamId(accountId); // Використовуємо steamId для збереження 32-bit Account ID
+        player.setSteamId(accountId);
         player.setNickname(nickname);
         player.setPlayerCard(avatar);
-        player.setCurrentRank(rankTier.equals("null") ? "Uncalibrated" : "Tier " + rankTier);
+        player.setCurrentRank(readableRank); // Тепер сюди запишеться "Herald 3"
 
         player.setLastUpdated(java.time.LocalDateTime.now());
         playerRepository.save(player);
@@ -475,6 +478,30 @@ public class PlayerController {
         return String.format("Dota 2 акаунт %s успішно прив'язано до email: %s", displayName, currentUser.getEmail());
     }
 
+    // Конвертація OpenDota rank_tier у читабельний формат
+    private String convertDotaRank(String rankTierStr) {
+        if (rankTierStr == null || rankTierStr.equals("null") || rankTierStr.isEmpty()) {
+            return "Uncalibrated";
+        }
+
+        try {
+            int tier = Integer.parseInt(rankTierStr);
+            if (tier == 0) return "Uncalibrated";
+
+            int badge = tier / 10;
+            int star = tier % 10;
+
+            String[] ranks = {"", "Herald", "Guardian", "Crusader", "Archon", "Legend", "Ancient", "Divine", "Immortal"};
+
+            if (badge >= 1 && badge <= 8) {
+                // У Immortal (8) немає зірок у такому ж форматі, тому просто повертаємо назву
+                return badge == 8 ? "Immortal" : ranks[badge] + " " + star;
+            }
+        } catch (NumberFormatException e) {
+            return "Uncalibrated";
+        }
+        return "Unknown";
+    }
 
 
 

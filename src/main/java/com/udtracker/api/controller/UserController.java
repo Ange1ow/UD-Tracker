@@ -32,43 +32,28 @@ public class UserController {
         List<Player> gameAccounts = playerRepository.findAllByAppUser(user);
 
         List<LinkedAccountDto> accounts = gameAccounts.stream()
-                .map(p -> new LinkedAccountDto(
-                        p.getId(),
-                        p.getGameType(),
-                        p.getSteamId(),
-                        p.getNickname(),
-                        p.getRiotId(),
-                        p.getTagLine(),
-                        p.getCurrentRank(),
-                        p.getAverageRating(),
-                        p.getPlayerCard()))
+                .map(p -> {
+                    // Використовуємо порожній конструктор і сетимо поля вручну,
+                    // щоб уникнути проблем зі зміною аргументів конструктора
+                    LinkedAccountDto dto = new LinkedAccountDto();
+                    dto.setId(p.getId());
+                    dto.setGameType(p.getGameType());
+                    dto.setSteamId(p.getSteamId());
+                    dto.setNickname(p.getNickname());
+                    dto.setRiotId(p.getRiotId());
+                    dto.setTagLine(p.getTagLine());
+                    dto.setCurrentRank(p.getCurrentRank());
+                    dto.setAverageRating(p.getAverageRating());
+                    dto.setPlayerCard(p.getPlayerCard());
+                    // Нова статистика:
+                    dto.setAverageKd(p.getAverageKd());
+                    dto.setAverageGpm(p.getAverageGpm());
+                    dto.setAverageXpm(p.getAverageXpm());
+                    return dto;
+                })
                 .collect(Collectors.toList());
 
         return new UserProfileDto(user.getEmail(), user.getGlobalRating(), accounts);
-    }
-
-    @GetMapping("/my-profile")
-    @Transactional(readOnly = true)
-    public ResponseEntity<UserProfileDto> getMyProfile(Principal principal) {
-        AppUser user = getAuthenticatedUser(principal);
-
-        List<Player> gameAccounts = playerRepository.findAllByAppUser(user);
-
-        UserProfileDto dto = new UserProfileDto();
-        dto.setEmail(user.getEmail());
-        dto.setGlobalRating(user.getGlobalRating());
-
-        // ВАЖЛИВО: Якщо на фронтенді ти чекаєш data.accounts, зміни setLinkedAccounts на setAccounts (і в DTO також)
-        dto.setLinkedAccounts(gameAccounts.stream()
-                .map(p -> new LinkedAccountDto(
-                        p.getId(),
-                        p.getGameType(),
-                        p.getNickname() != null ? p.getNickname() : (p.getRiotId() + "#" + p.getTagLine()),
-                        p.getCurrentRank(),
-                        p.getAverageRating()))
-                .toList());
-
-        return ResponseEntity.ok(dto);
     }
 
     // Універсальне відв'язування для будь-якої гри за ID гравця

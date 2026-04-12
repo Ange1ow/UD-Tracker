@@ -15,6 +15,7 @@ import java.util.List;
 @RequiredArgsConstructor
 public class DotaApiService {
 
+    private JsonNode heroesCache = null;
     private final WebClient.Builder webClientBuilder;
     private static final String BASE_URL = "https://api.opendota.com/api";
 
@@ -48,7 +49,30 @@ public class DotaApiService {
             log.warn("Не вдалося примусово оновити кеш OpenDota для ID {}", accountId32);
         }
     }
+    public String getHeroName(int heroId) {
+        try {
+            // Завантажуємо список героїв лише один раз при першому запиті
+            if (heroesCache == null) {
+                heroesCache = webClientBuilder.baseUrl(BASE_URL).build()
+                        .get()
+                        .uri("/heroes")
+                        .retrieve()
+                        .bodyToMono(JsonNode.class)
+                        .block();
+            }
 
+            if (heroesCache != null && heroesCache.isArray()) {
+                for (JsonNode hero : heroesCache) {
+                    if (hero.path("id").asInt() == heroId) {
+                        return hero.path("localized_name").asText(); // Віддає нормальне ім'я (напр. "Phantom Assassin")
+                    }
+                }
+            }
+        } catch (Exception e) {
+            log.error("Помилка завантаження словника героїв: {}", e.getMessage());
+        }
+        return "Unknown Hero";
+    }
     public List<MatchData> getRecentMatches(String steamId) {
         String accountId32 = convertToSteamId32(steamId);
         try {
@@ -71,6 +95,10 @@ public class DotaApiService {
                 MatchData data = new MatchData();
                 data.setMatchId(matchId);
                 data.setMode("Matchmaking");
+
+                // ---> ДОДАНО: Переклад hero_id в ім'я героя
+                int heroId = node.path("hero_id").asInt();
+                data.setAgent(getHeroName(heroId));
 
                 // Базові метрики, які є ЗАВЖДИ
                 data.setKills(node.path("kills").asInt());
