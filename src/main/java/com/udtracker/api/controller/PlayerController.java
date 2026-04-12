@@ -99,6 +99,10 @@ public class PlayerController {
             for (JsonNode match : matches) {
                 String matchId = match.path("metadata").path("matchid").asText();
                 String mode = match.path("metadata").path("mode").asText();
+                List<String> validModes = List.of("Competitive", "Unrated", "Premier");
+                if (!validModes.contains(mode)) {
+                    continue; // Якщо це Deathmatch, Custom або Escalation - просто скіпаємо цей матч
+                }
                 String mapName = match.path("metadata").path("map").asText();
                 JsonNode players = match.path("players").path("all_players");
 
@@ -323,31 +327,33 @@ public class PlayerController {
     @PostMapping("/link/cs2/{nickname}")
     @SecurityRequirement(name = "Bearer Authentication")
     public String linkCs2Account(@PathVariable String nickname, Principal principal) {
-        if (principal == null) {
-            return "Помилка: Ви не авторизовані!";
-        }
+        if (principal == null) throw new RuntimeException("Помилка: Ви не авторизовані!");
 
         AppUser currentUser = appUserRepository.findByEmail(principal.getName())
                 .orElseThrow(() -> new RuntimeException("Користувача не знайдено"));
 
-        // Шукаємо вже існуючий (завантажений) профіль CS2
+        // Шукаємо в БД. Якщо немає — авто-синхронізуємо через API.
         Player player = playerRepository.findByNicknameIgnoreCaseAndGameType(nickname, GameType.CS2)
-                .orElseThrow(() -> new RuntimeException("Спочатку знайдіть профіль через пошук!"));
+                .orElseGet(() -> {
+                    syncCs2FaceitPlayer(nickname);
+                    return playerRepository.findByNicknameIgnoreCaseAndGameType(nickname, GameType.CS2)
+                            .orElseThrow(() -> new RuntimeException("API Помилка: не вдалося завантажити профіль Faceit"));
+                });
 
         player.setAppUser(currentUser);
         playerRepository.save(player);
 
-        return String.format("Faceit акаунт %s успішно прив'язано до email: %s", nickname, currentUser.getEmail());
+        return String.format("Faceit акаунт %s успішно прив'язано до email: %s", player.getNickname(), currentUser.getEmail());
     }
     // ------------------- DOTA 2 ENDPOINTS -------------------
 
     @GetMapping("/sync/dota2/{accountId}")
     public String syncDotaPlayer(@PathVariable String accountId) {
         JsonNode profileData = dotaApiService.getPlayerProfile(accountId);
-        if (profileData == null || !profileData.has("profile")) {
-            throw new RuntimeException("Гравця Dota 2 не знайдено (перевірте ID)");
-        }
 
+        if (profileData == null || !profileData.has("profile")) {
+            throw new RuntimeException("Гравця Dota 2 не знайдено АБО статистика прихована. Увімкніть 'Expose Public Match Data' у налаштуваннях гри.");
+        }
         JsonNode profileNode = profileData.path("profile");
         String nickname = profileNode.path("personaname").asText();
         String avatar = profileNode.path("avatarfull").asText();
@@ -443,21 +449,33 @@ public class PlayerController {
     @PostMapping("/link/dota2/{accountId}")
     @SecurityRequirement(name = "Bearer Authentication")
     public String linkDotaAccount(@PathVariable String accountId, Principal principal) {
-        if (principal == null) {
-            return "Помилка: Ви не авторизовані!";
+        if (principal == null) throw new RuntimeException("Помилка: Ви не авторизовані!");
+
+        if (!accountId.matches("\\d+")) {
+            throw new IllegalArgumentException("Помилка: Dota 2 ID має складатися лише з цифр.");
         }
+
+        // НОРМАЛІЗАЦІЯ: Завжди працюємо з 32-bit ID, навіть якщо юзер ввів 64-bit
+        String normalizedId = dotaApiService.convertToSteamId32(accountId);
 
         AppUser currentUser = appUserRepository.findByEmail(principal.getName())
                 .orElseThrow(() -> new RuntimeException("Користувача не знайдено"));
 
-        Player player = playerRepository.findByGameTypeAndSteamId(GameType.DOTA2, accountId)
-                .orElseThrow(() -> new RuntimeException("Спочатку знайдіть профіль через пошук!"));
+        Player player = playerRepository.findByGameTypeAndSteamId(GameType.DOTA2, normalizedId)
+                .orElseGet(() -> {
+                    syncDotaPlayer(normalizedId);
+                    return playerRepository.findByGameTypeAndSteamId(GameType.DOTA2, normalizedId)
+                            .orElseThrow(() -> new RuntimeException("API Помилка: не вдалося завантажити профіль Dota 2."));
+                });
 
         player.setAppUser(currentUser);
         playerRepository.save(player);
 
-        return String.format("Dota 2 акаунт %s успішно прив'язано до email: %s", accountId, currentUser.getEmail());
+        String displayName = player.getNickname() != null ? player.getNickname() : normalizedId;
+        return String.format("Dota 2 акаунт %s успішно прив'язано до email: %s", displayName, currentUser.getEmail());
     }
+
+
 
 
 }

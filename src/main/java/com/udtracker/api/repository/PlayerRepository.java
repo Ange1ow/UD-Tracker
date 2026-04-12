@@ -1,5 +1,6 @@
 package com.udtracker.api.repository; // Перевір, щоб шлях був правильним
 
+import com.udtracker.api.model.AppUser;
 import com.udtracker.api.model.Player;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.stereotype.Repository;
@@ -21,4 +22,5 @@ public interface PlayerRepository extends JpaRepository<Player, Long> {
 
     List<Player> findTop10ByOrderByAverageRatingDesc();
     List<Player> findByAppUserIsNotNull();
+    List<Player> findAllByAppUser(AppUser appUser);
 }

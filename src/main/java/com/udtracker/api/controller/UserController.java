@@ -10,7 +10,6 @@ import lombok.RequiredArgsConstructor;
 import org.springframework.http.ResponseEntity;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.*;
-import org.springframework.security.core.context.SecurityContextHolder;
 
 import java.security.Principal;
 import java.util.List;
@@ -19,7 +18,7 @@ import java.util.stream.Collectors;
 @RestController
 @RequestMapping("/api/user")
 @RequiredArgsConstructor
-public class    UserController {
+public class UserController {
 
     private final AppUserRepository appUserRepository;
     private final PlayerRepository playerRepository;
@@ -27,13 +26,14 @@ public class    UserController {
     @GetMapping("/profile")
     @Transactional(readOnly = true)
     public UserProfileDto getProfile(Principal principal) {
-        if (principal == null) throw new RuntimeException("Не авторизовано");
+        AppUser user = getAuthenticatedUser(principal);
 
-        AppUser user = appUserRepository.findByEmail(principal.getName())
-                .orElseThrow(() -> new RuntimeException("Користувача не знайдено"));
+        // Обходимо LAZY loading - робимо явний запит в БД
+        List<Player> gameAccounts = playerRepository.findAllByAppUser(user);
 
-        List<LinkedAccountDto> accounts = user.getGameAccounts().stream()
+        List<LinkedAccountDto> accounts = gameAccounts.stream()
                 .map(p -> new LinkedAccountDto(
+                        p.getId(),
                         p.getGameType(),
                         p.getSteamId(),
                         p.getNickname(),
@@ -47,15 +47,37 @@ public class    UserController {
         return new UserProfileDto(user.getEmail(), user.getGlobalRating(), accounts);
     }
 
-    @DeleteMapping("/link/{riotId}/{tagLine}")
+    @GetMapping("/my-profile")
+    @Transactional(readOnly = true)
+    public ResponseEntity<UserProfileDto> getMyProfile(Principal principal) {
+        AppUser user = getAuthenticatedUser(principal);
+
+        List<Player> gameAccounts = playerRepository.findAllByAppUser(user);
+
+        UserProfileDto dto = new UserProfileDto();
+        dto.setEmail(user.getEmail());
+        dto.setGlobalRating(user.getGlobalRating());
+
+        // ВАЖЛИВО: Якщо на фронтенді ти чекаєш data.accounts, зміни setLinkedAccounts на setAccounts (і в DTO також)
+        dto.setLinkedAccounts(gameAccounts.stream()
+                .map(p -> new LinkedAccountDto(
+                        p.getId(),
+                        p.getGameType(),
+                        p.getNickname() != null ? p.getNickname() : (p.getRiotId() + "#" + p.getTagLine()),
+                        p.getCurrentRank(),
+                        p.getAverageRating()))
+                .toList());
+
+        return ResponseEntity.ok(dto);
+    }
+
+    // Універсальне відв'язування для будь-якої гри за ID гравця
+    @DeleteMapping("/link/{playerId}")
     @Transactional
-    public ResponseEntity<String> unlinkAccount(@PathVariable String riotId, @PathVariable String tagLine, Principal principal) {
-        if (principal == null) return ResponseEntity.status(401).body("Не авторизовано");
+    public ResponseEntity<String> unlinkAccount(@PathVariable Long playerId, Principal principal) {
+        AppUser user = getAuthenticatedUser(principal);
 
-        AppUser user = appUserRepository.findByEmail(principal.getName())
-                .orElseThrow(() -> new RuntimeException("Користувача не знайдено"));
-
-        Player player = playerRepository.findByRiotIdAndTagLine(riotId, tagLine)
+        Player player = playerRepository.findById(playerId)
                 .orElseThrow(() -> new RuntimeException("Ігровий акаунт не знайдено"));
 
         // Валідація власника
@@ -67,27 +89,13 @@ public class    UserController {
         player.setAppUser(null);
         playerRepository.save(player);
 
-        return ResponseEntity.ok("Акаунт " + riotId + "#" + tagLine + " успішно відв'язано");
+        return ResponseEntity.ok("Акаунт успішно відв'язано");
     }
-    @GetMapping("/my-profile")
-    public ResponseEntity<UserProfileDto> getMyProfile(Principal principal) {
-        if (principal == null) return ResponseEntity.status(401).build();
 
-        AppUser user = appUserRepository.findByEmail(principal.getName())
+    // DRY: Допоміжний метод для отримання користувача
+    private AppUser getAuthenticatedUser(Principal principal) {
+        if (principal == null) throw new RuntimeException("Не авторизовано");
+        return appUserRepository.findByEmail(principal.getName())
                 .orElseThrow(() -> new RuntimeException("Користувача не знайдено"));
-
-        UserProfileDto dto = new UserProfileDto(); // Працює завдяки @NoArgsConstructor
-        dto.setEmail(user.getEmail());
-        dto.setGlobalRating(user.getGlobalRating());
-
-        dto.setLinkedAccounts(user.getGameAccounts().stream()
-                .map(p -> new LinkedAccountDto(
-                        p.getGameType().name(),
-                        p.getNickname(),
-                        p.getCurrentRank(),
-                        p.getAverageRating())) // Працює завдяки ручному конструктору
-                .toList());
-
-        return ResponseEntity.ok(dto);
     }
 }

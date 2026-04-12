@@ -243,12 +243,12 @@
                 const res = await fetch('/api/user/profile', { headers: { 'Authorization': `Bearer ${token}` } });
                 if (res.ok) {
                     const data = await res.json();
-                    if (data.accounts && data.accounts.length > 0) {
-                        const acc = data.accounts[0];
+                    if (data.linkedAccounts && data.linkedAccounts.length > 0) {
+                        const acc = data.linkedAccounts[0];
                         let gameType = (acc.gameType || 'VALORANT').toLowerCase();
                         document.getElementById('game-selector').value = gameType;
                         document.getElementById('game-selector').dispatchEvent(new Event('change'));
-                        document.getElementById('name').value = gameType === 'valorant' ? acc.riotId : (acc.nickname || acc.steamId);
+                        document.getElementById('name').value = gameType === 'dota2' ? acc.steamId : (gameType === 'cs2' ? acc.nickname : acc.riotId);
                         if (gameType === 'valorant') document.getElementById('tag').value = acc.tagLine;
                         switchMainView('search');
                         analyzePlayer();
@@ -286,8 +286,14 @@
         const name = document.getElementById('name').value.trim();
         const tag = document.getElementById('tag').value.trim();
         const btn = document.getElementById('search-btn');
+        const btnLink = document.getElementById('btn-link');
 
         if (!name) { alert("Введіть ідентифікатор!"); return; }
+
+        // ЗАПАМ'ЯТОВУЄМО ОРИГІНАЛЬНІ ДАНІ: Для Dota це числовий ID, для CS2 нік, для Val riotId
+        btnLink.dataset.game = game;
+        btnLink.dataset.searchId = name;
+        btnLink.dataset.searchTag = tag;
 
         toggleLoader(true);
         btn.disabled = true;
@@ -446,7 +452,7 @@
             const players = await res.json();
             let html = '';
             players.forEach((p, i) => {
-                let identifier = p.gameType === 'CS2' ? p.steamId : (p.gameType === 'DOTA2' ? p.steamId : p.riotId);
+                let identifier = p.gameType === 'DOTA2' ? p.steamId : (p.gameType === 'CS2' ? p.nickname : p.riotId);
                 let display = p.gameType === 'CS2' ? p.nickname : (p.gameType === 'DOTA2' ? p.nickname : `${p.riotId}#${p.tagLine}`);
                 let selectGame = p.gameType === 'CS2' ? 'cs2' : (p.gameType === 'DOTA2' ? 'dota2' : 'valorant');
 
@@ -481,21 +487,34 @@
     function doLogout() { localStorage.removeItem('jwt_token'); checkAuth(); switchMainView('hub'); }
 
     async function linkCurrentAccount() {
-        const name = document.getElementById('p-name').innerText;
-        const tagText = document.getElementById('p-tag').innerText;
+        const btn = document.getElementById('btn-link');
+
+        // ВИТЯГУЄМО ОРИГІНАЛЬНІ ДАНІ З КНОПКИ (а не з візуального тексту)
+        const game = btn.dataset.game;
+        const searchId = btn.dataset.searchId;
+        const searchTag = btn.dataset.searchTag;
 
         let url = "";
-        if (tagText === "Faceit") {
-            url = `/api/v1/players/link/cs2/${name}`;
-        } else if (tagText === "Steam 32-bit") {
-            url = `/api/v1/players/link/dota2/${name}`; // Маршрут для доти
+        if (game === "cs2") {
+            url = `/api/v1/players/link/cs2/${searchId}`;
+        } else if (game === "dota2") {
+            url = `/api/v1/players/link/dota2/${searchId}`; // Тепер сюди йдуть суворо ЦИФРИ (ID)
         } else {
-            url = `/api/v1/players/link/${name}/${tagText.replace('#', '')}`;
+            url = `/api/v1/players/link/${searchId}/${searchTag.replace('#', '')}`;
         }
 
-        const res = await fetch(url, { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('jwt_token')}` } });
-        if (res.ok) document.getElementById('btn-link').style.display = 'none';
-        alert(await res.text());
+        try {
+            const res = await fetch(url, { method: 'POST', headers: { 'Authorization': `Bearer ${localStorage.getItem('jwt_token')}` } });
+
+            if (res.ok) {
+                btn.style.display = 'none';
+                loadMyProfile(); // Автоматично оновлюємо дані в профілі у фоні
+            }
+            alert(await res.text());
+        } catch (err) {
+            console.error("Помилка при прив'язці:", err);
+            alert("Сталася помилка. Перевірте консоль (F12).");
+        }
     }
 
     async function loadMyProfile() {
@@ -508,36 +527,57 @@
                 document.getElementById('cabinet-email').innerText = data.email;
                 document.getElementById('cabinet-global').innerText = data.globalRating ? data.globalRating.toFixed(2) : '0.00';
 
-                let html = data.accounts.length === 0 ? '<p style="color:#8a96a3;">Немає прив\'язаних акаунтів.</p>' : '';
-                data.accounts.forEach(acc => {
-                    let gameType = acc.gameType || 'VALORANT';
-                    let displayId = (gameType === 'CS2' || gameType === 'DOTA2') ? acc.nickname : `${acc.riotId}#${acc.tagLine}`;
-                    let searchId = (gameType === 'CS2' || gameType === 'DOTA2') ? acc.steamId : acc.riotId;
+                // ВИПРАВЛЕНО: Використовуємо data.linkedAccounts
+                let html = (!data.linkedAccounts || data.linkedAccounts.length === 0)
+                    ? '<p style="color:#8a96a3;">Немає прив\'язаних акаунтів.</p>'
+                    : '';
 
-                    html += `
-                    <div class="game-account-card">
-                        <div>
-                            <span class="game-badge">${gameType}</span>
-                            <div style="font-size: 18px; font-weight: bold; cursor:pointer;" onclick="switchMainView('search'); document.getElementById('game-selector').value='${gameType.toLowerCase()}'; document.getElementById('game-selector').dispatchEvent(new Event('change')); document.getElementById('name').value='${searchId}'; if('${gameType}'==='VALORANT') document.getElementById('tag').value='${acc.tagLine}'; analyzePlayer();">${displayId}</div>
-                            <div style="color: #8a96a3; font-size: 13px; margin-top: 5px;">${acc.currentRank || 'Unranked'}</div>
-                        </div>
-                        <div style="text-align: right;">
-                            <div style="color: #8a96a3; font-size: 12px;">Rating 2.1</div>
-                            <div style="font-size: 20px; font-weight: bold; color: #ff4655;">${acc.averageRating ? acc.averageRating.toFixed(2) : '0.00'}</div>
-                            <button onclick="unlinkAccount('${searchId}', '${acc.tagLine}')" style="background:none; border:none; color:#ef4444; font-size:12px; cursor:pointer; margin-top:5px; text-decoration:underline;">Відв'язати</button>
-                        </div>
-                    </div>`;
-                });
+                if (data.linkedAccounts) {
+                    data.linkedAccounts.forEach(acc => {
+                        let gameType = acc.gameType || 'VALORANT';
+                        let displayId = (gameType === 'CS2' || gameType === 'DOTA2') ? acc.nickname : `${acc.riotId}#${acc.tagLine}`;
+                        let searchId = gameType === 'DOTA2' ? acc.steamId : (gameType === 'CS2' ? acc.nickname : acc.riotId);
+
+                        html += `
+                        <div class="game-account-card">
+                            <div>
+                                <span class="game-badge">${gameType}</span>
+                                <div style="font-size: 18px; font-weight: bold; cursor:pointer;" onclick="switchMainView('search'); document.getElementById('game-selector').value='${gameType.toLowerCase()}'; document.getElementById('game-selector').dispatchEvent(new Event('change')); document.getElementById('name').value='${searchId}'; if('${gameType}'==='VALORANT') document.getElementById('tag').value='${acc.tagLine}'; analyzePlayer();">${displayId}</div>
+                                <div style="color: #8a96a3; font-size: 13px; margin-top: 5px;">${acc.currentRank || 'Unranked'}</div>
+                            </div>
+                            <div style="text-align: right;">
+                                <div style="color: #8a96a3; font-size: 12px;">Rating 2.1</div>
+                                <div style="font-size: 20px; font-weight: bold; color: #ff4655;">${acc.averageRating ? acc.averageRating.toFixed(2) : '0.00'}</div>
+                                <button onclick="unlinkAccount(${acc.id})" style="background:none; border:none; color:#ef4444; font-size:12px; cursor:pointer; margin-top:5px; text-decoration:underline;">Відв'язати</button>
+                            </div>
+                        </div>`;
+                    });
+                }
                 document.getElementById('linked-accounts-list').innerHTML = html;
             }
-        } catch (err) {}
+        } catch (err) {
+            console.error("Помилка завантаження профілю:", err);
+        }
     }
 
-    async function unlinkAccount(searchId, tagLine) {
+    async function unlinkAccount(accountId) {
         if (!confirm(`Відв'язати цей акаунт?`)) return;
-        // Примітка: Твій бекенд наразі підтримує тільки відв'язку Valorant за riotId/tagLine. Для Доти треба буде додати ендпоінт.
-        const res = await fetch(`/api/user/link/${searchId}/${tagLine}`, { method: 'DELETE', headers: { 'Authorization': `Bearer ${localStorage.getItem('jwt_token')}` } });
-        if (res.ok) loadMyProfile();
+
+        try {
+            const res = await fetch(`/api/user/link/${accountId}`, {
+                method: 'DELETE',
+                headers: { 'Authorization': `Bearer ${localStorage.getItem('jwt_token')}` }
+            });
+
+            if (res.ok) {
+                alert(await res.text());
+                loadMyProfile(); // Перезавантажуємо список
+            } else {
+                alert("Помилка відв'язування: " + await res.text());
+            }
+        } catch (err) {
+            console.error("Помилка відв'язування:", err);
+        }
     }
 </script>
 </body>

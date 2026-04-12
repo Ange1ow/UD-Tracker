@@ -18,8 +18,10 @@ public class DotaApiService {
     private final WebClient.Builder webClientBuilder;
     private static final String BASE_URL = "https://api.opendota.com/api";
 
-    public JsonNode getPlayerProfile(String steamId) {
-        String accountId32 = convertToSteamId32(steamId);
+    public JsonNode getPlayerProfile(String accountId) {
+        String accountId32 = convertToSteamId32(accountId);
+        refreshOpenDotaProfile(accountId32);
+
         try {
             return webClientBuilder.baseUrl(BASE_URL).build()
                     .get()
@@ -28,8 +30,22 @@ public class DotaApiService {
                     .bodyToMono(JsonNode.class)
                     .block();
         } catch (Exception e) {
-            log.error("Помилка OpenDota Profile для {}: {}", accountId32, e.getMessage());
+            log.error("API Error: Профіль Dota 2 для {}: {}", accountId32, e.getMessage());
             return null;
+        }
+    }
+
+    public void refreshOpenDotaProfile(String accountId) {
+        String accountId32 = convertToSteamId32(accountId);
+        try {
+            webClientBuilder.baseUrl(BASE_URL).build()
+                    .post()
+                    .uri("/players/{id}/refresh", accountId32)
+                    .retrieve()
+                    .bodyToMono(JsonNode.class) // Виправлено: OpenDota віддає JSON, не Void
+                    .block();
+        } catch (Exception e) {
+            log.warn("Не вдалося примусово оновити кеш OpenDota для ID {}", accountId32);
         }
     }
 
@@ -119,4 +135,5 @@ public class DotaApiService {
             return steamId;
         }
     }
+
 }
