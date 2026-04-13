@@ -110,6 +110,21 @@
             font-weight: bold;
         }
         .cross-stat-row { display: flex; justify-content: space-between; margin-top: 15px; padding-top: 15px; border-top: 1px solid #28313e; align-items: center; }
+
+        /* AUTH MODAL */
+        .modal-overlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: rgba(15, 20, 29, 0.85); display: flex; justify-content: center; align-items: center; z-index: 2000; backdrop-filter: blur(4px); }
+        .modal-content { background: #1b222d; padding: 40px; border-radius: 8px; width: 100%; max-width: 400px; border-top: 4px solid #ff4655; position: relative; box-shadow: 0 10px 30px rgba(0,0,0,0.5); }
+        .modal-close { position: absolute; top: 15px; right: 20px; font-size: 24px; color: #8a96a3; background: none; border: none; cursor: pointer; transition: 0.2s; }
+        .modal-close:hover { color: white; }
+        .modal-title { color: white; font-size: 24px; margin-bottom: 20px; text-align: center; font-weight: bold; }
+        .auth-input { width: 100%; padding: 12px 15px; margin-bottom: 15px; background: #28313e; border: 1px solid #3f4a57; color: white; border-radius: 4px; outline: none; font-size: 16px; transition: 0.2s; }
+        .auth-input:focus { border-color: #ff4655; }
+        .auth-submit { width: 100%; padding: 12px; background: #ff4655; color: white; border: none; border-radius: 4px; font-size: 16px; font-weight: bold; cursor: pointer; text-transform: uppercase; transition: 0.2s; }
+        .auth-submit:hover { background: #ff5e6a; }
+        .auth-switch { text-align: center; margin-top: 15px; font-size: 14px; color: #8a96a3; }
+        .auth-switch span { color: #ff4655; cursor: pointer; font-weight: bold; transition: 0.2s; }
+        .auth-switch span:hover { color: white; }
+        .auth-error { color: #ef4444; font-size: 14px; text-align: center; margin-bottom: 15px; display: none; }
     </style>
 </head>
 <body>
@@ -122,8 +137,8 @@
         <button class="nav-btn" id="nav-profile" style="display:none;" onclick="switchMainView('profile')">Мій Профіль</button>
     </nav>
     <div class="auth-buttons" id="auth-panel">
-        <button class="btn-secondary" onclick="doLogin()">Увійти</button>
-        <button class="btn-primary" onclick="doRegister()">Реєстрація</button>
+        <button class="btn-secondary" onclick="openAuthModal('login')">Увійти</button>
+        <button class="btn-primary" onclick="openAuthModal('register')">Реєстрація</button>
     </div>
     <div class="auth-buttons" id="user-panel" style="display: none;">
         <span style="color: #00ffbc; margin-right: 10px; font-weight: bold;">Авторизовано</span>
@@ -294,7 +309,23 @@
         </div>
     </div>
 </section>
+<div id="auth-modal" class="modal-overlay" style="display: none;">
+    <div class="modal-content">
+        <button class="modal-close" onclick="closeAuthModal()">&times;</button>
+        <div class="modal-title" id="auth-title">Вхід</div>
+        <div class="auth-error" id="auth-error">Помилка авторизації</div>
 
+        <form id="auth-form" onsubmit="handleAuthSubmit(event)">
+            <input type="email" id="auth-email" class="auth-input" placeholder="Email" required>
+            <input type="password" id="auth-password" class="auth-input" placeholder="Пароль" required>
+            <button type="submit" class="auth-submit" id="auth-btn">Увійти</button>
+        </form>
+
+        <div class="auth-switch" id="auth-switch-container">
+            Немає акаунту? <span onclick="switchAuthMode('register')">Зареєструватись</span>
+        </div>
+    </div>
+</div>
 
 <script>
     window.onload = async () => {
@@ -346,7 +377,7 @@
             switchMainView('hub');
         }
     };
-
+    let currentAuthMode = 'login';
     function switchMainView(viewName) {
         document.querySelectorAll('.view-section').forEach(el => el.classList.remove('active'));
         document.getElementById(`view-${viewName}`).classList.add('active');
@@ -550,19 +581,81 @@
         document.getElementById('nav-profile').style.display = token ? 'block' : 'none';
     }
 
-    async function doRegister() {
-        const email = prompt("Введіть email:"); if (!email) return;
-        const pass = prompt("Введіть пароль:"); if (!pass) return;
-        const res = await fetch('/api/auth/register', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email, password: pass }) });
-        alert(await res.text());
+    function openAuthModal(mode) {
+        switchAuthMode(mode);
+        document.getElementById('auth-modal').style.display = 'flex';
+        document.getElementById('auth-error').style.display = 'none';
+        document.getElementById('auth-email').value = '';
+        document.getElementById('auth-password').value = '';
     }
 
-    async function doLogin() {
-        const email = prompt("Email:"); if (!email) return;
-        const pass = prompt("Пароль:"); if (!pass) return;
-        const res = await fetch('/api/auth/login', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ email: email, password: pass }) });
-        if (res.ok) { localStorage.setItem('jwt_token', await res.text()); checkAuth(); alert("Успішний вхід!"); switchMainView('profile'); }
-        else alert("Помилка логіну!");
+    function closeAuthModal() {
+        document.getElementById('auth-modal').style.display = 'none';
+    }
+
+    function switchAuthMode(mode) {
+        currentAuthMode = mode;
+        const title = document.getElementById('auth-title');
+        const btn = document.getElementById('auth-btn');
+        const switchCont = document.getElementById('auth-switch-container');
+        document.getElementById('auth-error').style.display = 'none';
+
+        if (mode === 'login') {
+            title.innerText = 'Вхід';
+            btn.innerText = 'Увійти';
+            switchCont.innerHTML = 'Немає акаунту? <span onclick="switchAuthMode(\'register\')">Зареєструватись</span>';
+        } else {
+            title.innerText = 'Реєстрація';
+            btn.innerText = 'Зареєструватись';
+            switchCont.innerHTML = 'Вже є акаунт? <span onclick="switchAuthMode(\'login\')">Увійти</span>';
+        }
+    }
+
+    async function handleAuthSubmit(event) {
+        event.preventDefault();
+
+        const email = document.getElementById('auth-email').value.trim();
+        const password = document.getElementById('auth-password').value;
+        const errorEl = document.getElementById('auth-error');
+        const submitBtn = document.getElementById('auth-btn');
+
+        if (!email || !password) return;
+
+        submitBtn.disabled = true;
+        errorEl.style.display = 'none';
+
+        const url = currentAuthMode === 'login' ? '/api/auth/login' : '/api/auth/register';
+
+        try {
+            const res = await fetch(url, {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ email, password })
+            });
+
+            const textResponse = await res.text();
+
+            if (res.ok) {
+                if (currentAuthMode === 'login') {
+                    localStorage.setItem('jwt_token', textResponse);
+                    checkAuth();
+                    closeAuthModal();
+                    switchMainView('profile');
+                } else {
+                    // Після успішної реєстрації перемикаємо на логін
+                    alert("Реєстрація успішна! Тепер увійдіть.");
+                    switchAuthMode('login');
+                    document.getElementById('auth-password').value = ''; // Очищаємо пароль
+                }
+            } else {
+                throw new Error(textResponse || "Помилка авторизації");
+            }
+        } catch (err) {
+            errorEl.innerText = err.message;
+            errorEl.style.display = 'block';
+        } finally {
+            submitBtn.disabled = false;
+        }
     }
 
     function doLogout() { localStorage.removeItem('jwt_token'); checkAuth(); switchMainView('hub'); }
